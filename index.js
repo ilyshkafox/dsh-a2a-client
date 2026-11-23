@@ -40,6 +40,25 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 /** Предел выполнения одного инструмента (агент на той стороне может думать долго). */
 const TOOL_TIMEOUT_MS = 600_000;
 
+/**
+ * Переменная окружения по умолчанию: её читает любой агент, если для него
+ * не задано своё имя. Нужна для конфигов, где один токен общий на всех.
+ */
+export const DEFAULT_TOKEN_ENV = 'A2A_AUTH_TOKEN';
+
+/**
+ * Имя переменной с токеном конкретного агента: `A2A_TOKEN_<ИМЯ>`.
+ * `my agent` → `A2A_TOKEN_MY_AGENT`. Пустая строка, если из имени не выходит
+ * пригодный идентификатор (например, имя целиком из не-латиницы).
+ */
+export function envNameFor(agentName) {
+  const slug = String(agentName ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug ? `A2A_TOKEN_${slug}` : '';
+}
+
 /** Интервал опроса GetTask, пока задача не достигла терминального состояния. */
 const POLL_INTERVAL_MS = 500;
 
@@ -85,7 +104,7 @@ export function normalizeConfig(raw) {
   const timeoutMs = positiveNumber(source.timeoutMs, DEFAULT_TIMEOUT_MS);
   const tokenEnv = typeof source.tokenEnv === 'string' && source.tokenEnv.trim()
     ? source.tokenEnv.trim()
-    : 'A2A_AUTH_TOKEN';
+    : DEFAULT_TOKEN_ENV;
 
   const rawAgents = Array.isArray(source.agents) ? source.agents : [];
   if (rawAgents.length === 0) warnings.push('В конфиге нет ни одного агента (agents: []).');
@@ -105,7 +124,12 @@ export function normalizeConfig(raw) {
     agents.push({
       name: agentName,
       cardUrl,
-      tokenEnv: typeof entry.tokenEnv === 'string' && entry.tokenEnv.trim() ? entry.tokenEnv.trim() : tokenEnv,
+      // Своё имя переменной важнее общего: только оно позволяет держать
+      // у разных агентов разные токены. Не задано — выведем из имени агента.
+      tokenEnv: (typeof entry.tokenEnv === 'string' && entry.tokenEnv.trim())
+        ? entry.tokenEnv.trim()
+        : envNameFor(agentName),
+      tokenEnvFallback: tokenEnv,
       token: typeof entry.token === 'string' ? entry.token.trim() : '',
       timeoutMs: positiveNumber(entry.timeoutMs, timeoutMs),
       configToken: typeof source.token === 'string' ? source.token.trim() : '',
@@ -129,11 +153,21 @@ export function normalizeConfig(raw) {
   return { agents, defaultAgent, timeoutMs, tokenEnv, warnings };
 }
 
-/** Токен: переменная окружения важнее значения из конфига, чтобы секрет можно было не хранить в файле. */
+/**
+ * Токен агента: переменная окружения важнее значения из конфига, чтобы секрет
+ * можно было не хранить в файле. Порядок — от частного к общему:
+ * своя переменная агента (`A2A_TOKEN_<ИМЯ>` или явный `tokenEnv`), затем общая
+ * (`tokenEnv` верхнего уровня, по умолчанию `A2A_AUTH_TOKEN`), затем поля
+ * `token` из конфига и из файла реестра.
+ */
 export function resolveToken(agent) {
-  const fromEnv = agent.tokenEnv ? process.env[agent.tokenEnv] : undefined;
-  const token = (fromEnv && fromEnv.trim()) || agent.token || agent.configToken || '';
-  return token.trim() || undefined;
+  for (const envName of [agent.tokenEnv, agent.tokenEnvFallback]) {
+    if (!envName) continue;
+    const fromEnv = process.env[envName];
+    if (fromEnv && fromEnv.trim()) return fromEnv.trim();
+  }
+  const token = String(agent.token || agent.configToken || '').trim();
+  return token || undefined;
 }
 
 function authHeaders(agent) {
@@ -207,11 +241,16 @@ export function storePath() {
 
 /** Приводит запись агента к внутренней форме (из конфига или из файла). */
 export function agentRecord(spec, fallbackTimeout) {
+  const name = String(spec?.name ?? '').trim();
+  const explicitEnv = String(spec?.tokenEnv ?? '').trim();
   return {
-    name: String(spec?.name ?? '').trim(),
+    name,
     cardUrl: String(spec?.cardUrl ?? '').trim(),
     token: String(spec?.token ?? spec?.configToken ?? '').trim(),
-    tokenEnv: String(spec?.tokenEnv ?? '').trim(),
+    // Явное имя переменной важнее выведенного из имени агента: так можно
+    // подключить несколько агентов к одному токену или дать им разные.
+    tokenEnv: explicitEnv || envNameFor(name),
+    tokenEnvFallback: String(spec?.tokenEnvFallback ?? '').trim(),
     timeoutMs: positiveNumber(spec?.timeoutMs, fallbackTimeout ?? DEFAULT_TIMEOUT_MS),
     enabled: spec?.enabled !== false,
   };
@@ -221,13 +260,20 @@ export function agentRecord(spec, fallbackTimeout) {
  * Читает файл реестра. При отсутствии файла источником служит `seedAgents`
  * (для глобального реестра — `agents` из конфига плагина).
  */
-export async function loadRegistryFrom(file, seedAgents, fallbackTimeout) {
+export async function loadRegistryFrom(file, seedAgents, fallbackTimeout, fallbackTokenEnv = '') {
   const warnings = [];
   try {
     const raw = await fsp.readFile(file, 'utf8');
     const parsed = JSON.parse(raw);
     const list = Array.isArray(parsed?.agents) ? parsed.agents : [];
-    const agents = list.map((item) => agentRecord(item, fallbackTimeout)).filter((agent) => agent.name && agent.cardUrl);
+    const agents = list
+      .map((item) => agentRecord({
+        ...item,
+        // Общая переменная из конфига важнее сохранённой в файле: файл хранит
+        // агентов, а имя переменной задаёт конфиг профиля.
+        tokenEnvFallback: fallbackTokenEnv || item?.tokenEnvFallback,
+      }, fallbackTimeout))
+      .filter((agent) => agent.name && agent.cardUrl);
     if (agents.length !== list.length) warnings.push('Часть записей пропущена: нет name или cardUrl.');
     return { agents, source: 'file', file, exists: true, warnings };
   } catch (error) {
@@ -247,7 +293,7 @@ export async function loadAgents(config) {
   const seed = config.agents
     .map((item) => agentRecord(item, config.timeoutMs))
     .filter((agent) => agent.name && agent.cardUrl);
-  return loadRegistryFrom(storePath(), seed, config.timeoutMs);
+  return loadRegistryFrom(storePath(), seed, config.timeoutMs, config.tokenEnv);
 }
 
 /** Очередь записи: два быстрых клика в панели не должны перетереть друг друга. */
@@ -861,7 +907,7 @@ function createPanelApiHandler(globalRegistry, options) {
     }
     let registry = options.workspaceRegistries.get(workspace.file);
     if (!registry) {
-      const loaded = await loadRegistryFrom(workspace.file, [], DEFAULT_TIMEOUT_MS);
+      const loaded = await loadRegistryFrom(workspace.file, [], DEFAULT_TIMEOUT_MS, options.tokenEnv);
       registry = {
         agents: loaded.agents,
         defaultName: loaded.agents[0]?.name ?? null,
@@ -951,6 +997,10 @@ function createPanelApiHandler(globalRegistry, options) {
       name,
       cardUrl,
       token: input?.token,
+      // Имя переменной выводится из имени агента: панель по-прежнему
+      // принимает токен полем, но переменная окружения важнее него.
+      tokenEnv: input?.tokenEnv,
+      tokenEnvFallback: options.tokenEnv,
       timeoutMs: positiveNumber(Number(input?.timeoutSec) * 1000, DEFAULT_TIMEOUT_MS),
     }, DEFAULT_TIMEOUT_MS);
     await verify(record, name);
@@ -975,7 +1025,8 @@ function createPanelApiHandler(globalRegistry, options) {
       name: nextName,
       cardUrl,
       token,
-      tokenEnv: agent.tokenEnv,
+      tokenEnv: has('tokenEnv') ? patch.tokenEnv : agent.tokenEnv,
+      tokenEnvFallback: agent.tokenEnvFallback || options.tokenEnv,
       timeoutMs,
       enabled: agent.enabled,
     }, agent.timeoutMs);
@@ -1185,7 +1236,7 @@ export async function apply(ctx, rawConfig) {
   async function workspaceRegistry(workspace) {
     let local = workspaceRegistries.get(workspace.file);
     if (!local) {
-      const fileLoaded = await loadRegistryFrom(workspace.file, [], DEFAULT_TIMEOUT_MS);
+      const fileLoaded = await loadRegistryFrom(workspace.file, [], DEFAULT_TIMEOUT_MS, config.tokenEnv);
       local = {
         agents: fileLoaded.agents,
         defaultName: fileLoaded.agents[0]?.name ?? null,
@@ -1234,7 +1285,7 @@ export async function apply(ctx, rawConfig) {
       () => webCtx.webServer.register({
         kind: 'exact',
         path: API_PATH,
-        handler: createPanelApiHandler(registry, { resolveWorkspace, workspaceRegistries, forgetAgent }),
+        handler: createPanelApiHandler(registry, { resolveWorkspace, workspaceRegistries, forgetAgent, tokenEnv: config.tokenEnv }),
       }),
       'a2a-client: panel API',
     );
