@@ -121,6 +121,26 @@ npm publish     # runs check and test first (prepublishOnly)
 `cordis.patch.yml`, `locale/*.json`, `icon.svg`, and the three READMEs. Add a new
 runtime file to `files` and `exports` together.
 
+### Releases
+
+Pushing a `v*` tag publishes the package — no local build, no manual `npm publish`:
+
+```sh
+npm version patch --no-git-tag-version   # bump package.json
+git commit -am "Версия 1.7.2"
+git tag v1.7.2
+git push origin main --tags
+```
+
+`.github/workflows/release.yml` refuses a tag that does not match
+`package.json`, runs both suites, publishes to npm with provenance, and creates
+the GitHub Release with generated notes. `.github/workflows/ci.yml` runs the same
+checks on `main` and on pull requests.
+
+One-time setup: enable a **trusted publisher** for `dsh-a2a-client` on npmjs.com
+(repository `ilyshkafox/dsh-a2a-client`, workflow `release.yml`), or add an
+`NPM_TOKEN` repository secret instead. Provenance needs a public repository.
+
 ## License
 
 [MIT](LICENSE)

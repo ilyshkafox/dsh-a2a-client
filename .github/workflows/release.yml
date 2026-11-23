@@ -1,0 +1,93 @@
+name: Release
+
+# Тег — единственный вход в релиз: версия в теге обязана совпасть с
+# package.json, иначе публикация не начнётся.
+on:
+  push:
+    tags: ['v*']
+
+# contents — создать GitHub Release; id-token — provenance и публикация без
+# долгоживущего токена (npm trusted publishing).
+permissions:
+  contents: write
+  id-token: write
+
+# Два тега подряд не должны публиковать одновременно.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE: dsh-a2a-client
+
+jobs:
+  release:
+    name: Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Версия в теге и в манифесте — одно и то же число. Иначе npm получил бы
+      # один номер, а GitHub Release — другой.
+      - name: Match tag with package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          echo "tag: $tag, package.json: $version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Refuse an already published version
+        run: |
+          if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::$PACKAGE@$VERSION is already published; bump the version and tag again"
+            exit 1
+          fi
+
+      - name: Syntax of both halves
+        run: npm run check
+
+      - name: Locale and security suites
+        run: npm test
+
+      # Секрет виден в `if` только через env, поэтому наличие NPM_TOKEN
+      # проверяет отдельный шаг, а сам токен достаётся лишь тем двум шагам,
+      # которым он нужен.
+      - name: Detect npm token
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # npm trusted publishing: при включённом на npmjs.com доверенном
+      # издателе токен не нужен, npm берёт его из OIDC. Если в репозитории
+      # заведён секрет NPM_TOKEN, он используется вместо OIDC.
+      - name: Configure npm token when the secret exists
+        if: steps.token.outputs.present == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}

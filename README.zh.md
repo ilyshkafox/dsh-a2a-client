@@ -114,6 +114,25 @@ npm publish     # 先执行 check 和 test（prepublishOnly）
 `cordis.patch.yml`、`locale/*.json`、`icon.svg` 以及三个 README。新增运行时
 文件时，要同时加入 `files` 和 `exports`。
 
+### 发布
+
+推送 `v*` 标签即发布，无需本地构建，也无需手动 `npm publish`：
+
+```sh
+npm version patch --no-git-tag-version   # 提升 package.json 版本
+git commit -am "Версия 1.7.2"
+git tag v1.7.2
+git push origin main --tags
+```
+
+`.github/workflows/release.yml` 会拒绝与 `package.json` 不一致的标签，运行两套
+测试，带 provenance 发布到 npm，并生成带自动说明的 GitHub Release。
+`.github/workflows/ci.yml` 在 `main` 和 pull request 上运行同样的检查。
+
+一次性配置：在 npmjs.com 为 `dsh-a2a-client` 启用 **trusted publisher**
+（仓库 `ilyshkafox/dsh-a2a-client`，workflow `release.yml`），或改用仓库密钥
+`NPM_TOKEN`。provenance 需要公开仓库。
+
 ## 许可证
 
 [MIT](LICENSE)

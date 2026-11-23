@@ -124,6 +124,28 @@ npm publish     # сначала прогоняет check и test (prepublishOnl
 `cordis.patch.yml`, `locale/*.json`, `icon.svg` и три README. Новый файл
 рантайма нужно добавлять и в `files`, и в `exports`.
 
+### Релизы
+
+Пуш тега `v*` публикует пакет — без локальной сборки и без ручного
+`npm publish`:
+
+```sh
+npm version patch --no-git-tag-version   # поднять версию в package.json
+git commit -am "Версия 1.7.2"
+git tag v1.7.2
+git push origin main --tags
+```
+
+`.github/workflows/release.yml` откажет тегу, который не совпадает с
+`package.json`, прогонит оба набора, опубликует пакет в npm с provenance и
+создаст GitHub Release со сгенерированными заметками.
+`.github/workflows/ci.yml` прогоняет те же проверки на `main` и в pull request.
+
+Разовая настройка: включите **trusted publisher** для `dsh-a2a-client` на
+npmjs.com (репозиторий `ilyshkafox/dsh-a2a-client`, workflow `release.yml`) или
+заведите секрет репозитория `NPM_TOKEN`. Provenance требует публичный
+репозиторий.
+
 ## Лицензия
 
 [MIT](LICENSE)
