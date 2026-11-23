@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Клиент A2A (Agent2Agent) для DSH: подключается к удалённому агенту по его AgentCard, даёт модели инструменты для обмена сообщениями и страницу «Настройки → A2A».",
+  "license": "MIT",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
