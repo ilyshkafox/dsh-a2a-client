@@ -19,10 +19,16 @@ DeepSeek Harness 的 [Agent2Agent (A2A) 1.0](https://a2a-protocol.org) 客户端
 
 ## 安装
 
-包名是 `dsh-a2a-client`。安装会同时启用 bundle：`dsh plugin add` 会添加 profile
-依赖以及 `dsh.profile.bundles` 中的条目。
+包名是 `dsh-a2a-client`。安装会同时启用 bundle：profile 依赖和
+`dsh.profile.bundles` 条目一起添加，不需要再单独选择 bundle。
 
-### web profile
+### 「插件」面板——web 与桌面版
+
+最短的方式，也是唯一不需要终端的方式：打开**插件**，用目标
+`dsh-a2a-client`（npm）或 `github:ilyshkafox/dsh-a2a-client`（git）安装。面板会
+检查仓库与 DSH 版本、显示进度，并说明是否需要重启。
+
+### 终端——web profile
 
 ```sh
 dsh plugin --profile web add dsh-a2a-client                      # 从 npm
@@ -31,23 +37,27 @@ dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client    # 从 git
 
 重启 DSH：侧边栏出现 **A2A** 面板，聊天中出现对应工具。
 
-### 桌面版
+### 终端——桌面版
 
-桌面版管理自己的 profile：先启动应用一次以创建 profile，退出应用，再运行随应用
-附带的 `dsh` 命令——profile 锁和已加载的 bundle 都属于正在运行的应用。
+桌面版有自己的 profile，与 `web` 分开：应用首次启动时创建
+`~/.dsh/profiles/desktop`，并在启动时加载所有 bundle。因此命令必须在应用关闭
+时执行，而且要用随应用附带的 `dsh`。
 
-```sh
-dsh plugin --profile desktop add dsh-a2a-client
-```
+1. 先启动应用一次再关闭，使 `desktop` profile 存在。
+2. 完全退出：窗口、托盘图标，以及任务管理器中残留的 `DeepSeek Harness` 进程。
+   运行中的应用会占用 profile 的 `node_modules` 中的文件。
+3. 执行命令：
 
-然后重新启动应用。单独从 npm 安装的 `dsh` 不接受 `desktop` profile：只有应用
-自带的命令才能管理它。
+   ```sh
+   dsh plugin --profile desktop add dsh-a2a-client
+   ```
 
-### 「插件」面板
+4. 重新启动应用：侧边栏出现 **A2A** 面板。
 
-**插件** → 安装，目标为 `dsh-a2a-client`（npm）或
-`github:ilyshkafox/dsh-a2a-client`（git）。面板会检查仓库与 DSH 版本、显示进度，
-并说明是否需要重启。
+用 `where dsh`（Windows）或 `which dsh`（macOS、Linux）确认使用的是哪一个
+`dsh`。安装程序会把应用自带的命令加入用户 `PATH`，只有它能管理 `desktop`
+profile——单独从 npm 安装的 `dsh` 会拒绝，并提示 *profile "desktop" is managed
+exclusively by the Electron application*。
 
 ### 手动安装
 

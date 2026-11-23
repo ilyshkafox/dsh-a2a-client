@@ -19,10 +19,18 @@ optional `authorization: Bearer` — methods `SendMessage`, `SendStreamingMessag
 
 ## Install
 
-The package is `dsh-a2a-client`. Installing it also enables the bundle:
-`dsh plugin add` adds the profile dependency and the `dsh.profile.bundles` entry.
+The package is `dsh-a2a-client`. Installing it also enables the bundle: the
+profile dependency and the `dsh.profile.bundles` entry are added together, so a
+separate selection step is not needed.
 
-### Web profile
+### Plugins panel — web and Desktop
+
+The shortest route, and the only one that needs no terminal: open **Plugins**,
+install with the target `dsh-a2a-client` (npm) or
+`github:ilyshkafox/dsh-a2a-client` (git). The panel checks the repository and the
+DSH version, streams progress, and tells you whether to restart.
+
+### Terminal — web profile
 
 ```sh
 dsh plugin --profile web add dsh-a2a-client                      # from npm
@@ -31,24 +39,30 @@ dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client    # from git
 
 Restart DSH: the **A2A** panel appears in the sidebar and the tools in chat.
 
-### Desktop
+### Terminal — Desktop
 
-Desktop owns its profile: start the app once so the profile exists, quit it, then
-run the `dsh` command that ships with the app — the profile lock and the loaded
-bundle both belong to the running application.
+Desktop has its own profile, separate from `web`: the app creates
+`~/.dsh/profiles/desktop` on first launch and loads every bundle at startup. So
+the command has to run with the app closed, and it has to be the `dsh` that ships
+with the app.
 
-```sh
-dsh plugin --profile desktop add dsh-a2a-client
-```
+1. Start the app once and close it, so the `desktop` profile exists.
+2. Quit it completely — the window, the tray icon, and any `DeepSeek Harness`
+   process left in the task manager. A running app keeps files in the profile's
+   `node_modules` open.
+3. Run the command:
 
-Start the app again. A `dsh` installed separately from npm refuses the `desktop`
-profile: only the app's own command may manage it.
+   ```sh
+   dsh plugin --profile desktop add dsh-a2a-client
+   ```
 
-### Plugins panel
+4. Start the app again: the **A2A** panel appears in the sidebar.
 
-**Plugins** → install, target `dsh-a2a-client` (npm) or
-`github:ilyshkafox/dsh-a2a-client` (git). The panel checks the repository and the
-DSH version, streams progress and reports whether a restart is needed.
+Check which `dsh` you have with `where dsh` (Windows) or `which dsh` (macOS,
+Linux). The installer puts the app's own command on your user `PATH`, and that is
+the only one allowed to touch the `desktop` profile — a `dsh` installed separately
+from npm refuses it with *profile "desktop" is managed exclusively by the Electron
+application*.
 
 ### By hand
 
