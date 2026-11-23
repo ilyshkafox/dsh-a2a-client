@@ -110,44 +110,6 @@ dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client    # из git
   инструкции. Границы и описания инструментов — по-русски при любом языке
   интерфейса.
 
-## Разработка
-
-Зависимостей и сборки нет; после правок перезапустите DSH.
-
-```sh
-npm test        # наборы locale и security
-npm run check   # синтаксис обеих половин
-npm publish     # сначала прогоняет check и test (prepublishOnly)
-```
-
-`files` в `package.json` — весь состав npm-пакета: `index.js`, `client.js`,
-`cordis.patch.yml`, `locale/*.json`, `icon.svg` и три README. Новый файл
-рантайма нужно добавлять и в `files`, и в `exports`.
-
-### Релизы
-
-Пуш тега `v*` публикует пакет — без локальной сборки и без ручного
-`npm publish`:
-
-```sh
-npm version patch --no-git-tag-version   # поднять версию в package.json
-git commit -am "Версия 1.7.2"
-git tag v1.7.2
-git push origin main --tags
-```
-
-`.github/workflows/release.yml` откажет тегу, который не совпадает с
-`package.json`, прогонит оба набора, опубликует пакет в npm с provenance и
-создаст GitHub Release со сгенерированными заметками.
-`.github/workflows/ci.yml` прогоняет те же проверки на `main` и в pull request.
-
-Разовая настройка: trusted publishing в npm включается для уже существующего
-пакета, поэтому **первый** релиз требует секрета репозитория `NPM_TOKEN`
-(granular-токен с правом публикации). Когда `dsh-a2a-client` появится в npm,
-включите для него **trusted publisher** (репозиторий
-`ilyshkafox/dsh-a2a-client`, workflow `release.yml`) и удалите секрет —
-дальше публикация идёт по OIDC. Provenance требует публичный репозиторий.
-
 ## Лицензия
 
 [MIT](LICENSE)

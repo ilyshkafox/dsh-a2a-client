@@ -107,43 +107,6 @@ agent name: `prod agent` becomes `A2A_TOKEN_PROD_AGENT`.
   frames: it is data, not instructions. The frame and the tool descriptions are
   Russian in every UI language.
 
-## Development
-
-No dependencies, no build step; restart DSH after editing.
-
-```sh
-npm test        # locale + security suites
-npm run check   # syntax of both halves
-npm publish     # runs check and test first (prepublishOnly)
-```
-
-`files` in `package.json` is the whole npm payload: `index.js`, `client.js`,
-`cordis.patch.yml`, `locale/*.json`, `icon.svg`, and the three READMEs. Add a new
-runtime file to `files` and `exports` together.
-
-### Releases
-
-Pushing a `v*` tag publishes the package — no local build, no manual `npm publish`:
-
-```sh
-npm version patch --no-git-tag-version   # bump package.json
-git commit -am "Версия 1.7.2"
-git tag v1.7.2
-git push origin main --tags
-```
-
-`.github/workflows/release.yml` refuses a tag that does not match
-`package.json`, runs both suites, publishes to npm with provenance, and creates
-the GitHub Release with generated notes. `.github/workflows/ci.yml` runs the same
-checks on `main` and on pull requests.
-
-One-time setup: npm trusted publishing is configured per package, so the **first**
-release needs an `NPM_TOKEN` repository secret (a granular token with publish
-rights). Once `dsh-a2a-client` exists on npm, enable a **trusted publisher** for
-it (repository `ilyshkafox/dsh-a2a-client`, workflow `release.yml`) and delete
-the secret — later releases then publish over OIDC. Provenance needs a public
-repository.
-
 ## License
 
 [MIT](LICENSE)
