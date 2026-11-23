@@ -31,7 +31,7 @@ requests.
 
 A **GitHub Release** publishes to npm — not a tag push. The release is the one
 act that ships, so what reaches npm is always what was released. Publishing a
-release for tag `v1.7.2` runs `.github/workflows/release.yml`, which checks the
+release for tag `v1.7.2` runs `.github/workflows/publish.yml`, which checks the
 tag against `package.json`, runs both suites, skips a version npm already has,
 publishes, and prints what npm now serves.
 
@@ -56,7 +56,7 @@ The workflow uses npm trusted publishing (OIDC) — there is no `NPM_TOKEN`
 secret. The trust is configured once, and it needs the package to exist:
 
 ```sh
-npm trust github dsh-a2a-client --file release.yml --repo ilyshkafox/dsh-a2a-client
+npm trust github dsh-a2a-client --file publish.yml --repo ilyshkafox/dsh-a2a-client
 ```
 
 `npm trust list dsh-a2a-client` shows what is configured. If the package is ever
