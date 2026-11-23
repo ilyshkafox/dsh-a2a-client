@@ -1,0 +1,23 @@
+# Зависимости
+node_modules/
+pnpm-lock.yaml
+
+# Секреты и локальные конфиги
+.env
+.env.*
+!.env.example
+cordis.patch.local.yml
+a2a-client.json
+
+# Логи и временные файлы
+*.log
+npm-debug.log*
+pnpm-debug.log*
+*.tmp
+
+# Редакторы и ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

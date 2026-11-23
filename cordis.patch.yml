@@ -1,0 +1,17 @@
+# Патч-слой бандла @local/dsh-a2a-client: вставляет плагин в профиль
+# под идентификатором `a2a-client`.
+#
+# Токен здесь не хранится. Значение берётся из переменной окружения, имя
+# которой задаёт `tokenEnv` (по умолчанию A2A_AUTH_TOKEN): переменная важнее
+# поля `token`. Локальную копию с реальным токеном держите в
+# cordis.patch.local.yml — этот файл в .gitignore и в репозиторий не попадает.
+- insert:
+    - id: a2a-client
+      name: '@local/dsh-a2a-client'
+      config:
+        defaultAgent: test
+        agents:
+          - name: test
+            cardUrl: http://localhost:3080/.well-known/agent-card.json
+            tokenEnv: A2A_AUTH_TOKEN
+            timeoutMs: 120000

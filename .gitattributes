@@ -1,0 +1,15 @@
+# Нормализация переводов строк: в репозитории — LF, в рабочей копии —
+# родные для платформы (CRLF на Windows). Файлы на диске не перезаписываются.
+* text=auto
+
+# Явно текстовые
+*.js    text
+*.json  text
+*.yml   text
+*.md    text
+*.svg   text
+
+# Бинарные
+*.png   binary
+*.jpg   binary
+*.ico   binary

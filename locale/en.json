@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "A2A Client",
+    "description": "Connects to remote Agent2Agent (A2A) 1.0 agents: agent card, message sending, and task control."
+  }
+}
