@@ -1,5 +1,5 @@
 /**
- * client.js — браузерная половина @local/dsh-a2a-client.
+ * client.js — браузерная половина dsh-a2a-client.
  *
  * Одна панель в левом сайдбаре («A2A»): список агентов карточками и модальные
  * окна — просмотр, добавление, редактирование и подтверждение удаления.
@@ -16,7 +16,7 @@
  * токены наружу не отдаются. Сборка не нужна: файл грузит загрузчик модулей DSH.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-a2a-client',
+  id: 'dsh-a2a-client',
   factory: function (require) {
     var module = { exports: {} }
     ;(function (module, exports, require) {

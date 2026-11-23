@@ -1,10 +1,26 @@
 {
-  "name": "@local/dsh-a2a-client",
+  "name": "dsh-a2a-client",
   "version": "1.7.0",
-  "private": true,
   "type": "module",
   "description": "Клиент A2A (Agent2Agent) для DSH: подключается к удалённому агенту по его AgentCard, даёт модели инструменты для обмена сообщениями и панель «A2A» с подписями на языке DSH.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ilyshkafox/dsh-a2a-client.git"
+  },
+  "homepage": "https://github.com/ilyshkafox/dsh-a2a-client#readme",
+  "bugs": {
+    "url": "https://github.com/ilyshkafox/dsh-a2a-client/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-bundle",
+    "a2a",
+    "agent2agent",
+    "agent-card",
+    "plugin"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -20,7 +36,8 @@
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js",
-    "test": "node test/locale.test.cjs && node test/security.test.cjs"
+    "test": "node test/locale.test.cjs && node test/security.test.cjs",
+    "prepublishOnly": "npm run check && npm test"
   },
   "dsh": {
     "client": {

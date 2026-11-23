@@ -1,4 +1,4 @@
-# Патч-слой бандла @local/dsh-a2a-client: вставляет плагин в профиль
+# Патч-слой бандла dsh-a2a-client: вставляет плагин в профиль
 # под идентификатором `a2a-client`.
 #
 # Агенты здесь намеренно не заданы: после установки добавьте своего агента
@@ -14,7 +14,7 @@
 # cordis.patch.local.yml: она в .gitignore и в репозиторий не попадает.
 - insert:
     - id: a2a-client
-      name: '@local/dsh-a2a-client'
+      name: 'dsh-a2a-client'
       config:
         timeoutMs: 120000
         # defaultAgent: my-agent

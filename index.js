@@ -1,5 +1,5 @@
 /**
- * @local/dsh-a2a-client — клиент Agent2Agent (A2A) v1.0 для DeepSeek Harness.
+ * dsh-a2a-client — клиент Agent2Agent (A2A) v1.0 для DeepSeek Harness.
  *
  * Подключается к удалённому A2A-агенту по его AgentCard и регистрирует
  * модельные инструменты:
@@ -21,7 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 /** Имя пакета: по нему находится профиль, который действительно загрузил плагин. */
-const PACKAGE_NAME = '@local/dsh-a2a-client';
+const PACKAGE_NAME = 'dsh-a2a-client';
 
 export const name = 'a2a-client';
 
@@ -260,15 +260,23 @@ function listProfileNames(profilesDirectory) {
   }
 }
 
+/**
+ * Имена, под которыми профиль мог объявить этот бандл. Старое имя пакета
+ * (`@local/dsh-a2a-client`) остаётся здесь, чтобы профиль, поставленный до
+ * публикации, по-прежнему находился.
+ */
+const PACKAGE_NAMES = [PACKAGE_NAME, '@local/dsh-a2a-client'];
+
 /** Профиль, в чьём package.json перечислен этот бандл — то есть запущенный сейчас. */
 function profileOwningBundle(profilesDirectory) {
   for (const profileName of listProfileNames(profilesDirectory)) {
     try {
       const manifest = JSON.parse(readFileSync(path.join(profilesDirectory, profileName, 'package.json'), 'utf8'));
       const bundles = manifest?.dsh?.profile?.bundles;
-      if (Array.isArray(bundles) && bundles.includes(PACKAGE_NAME)) return profileName;
+      const declared = Array.isArray(bundles) && PACKAGE_NAMES.some((name) => bundles.includes(name));
+      if (declared) return profileName;
       const dependencies = manifest?.dependencies;
-      if (dependencies && Object.prototype.hasOwnProperty.call(dependencies, PACKAGE_NAME)) return profileName;
+      if (dependencies && PACKAGE_NAMES.some((name) => Object.prototype.hasOwnProperty.call(dependencies, name))) return profileName;
     } catch {
       // профиль без package.json — не наш
     }
