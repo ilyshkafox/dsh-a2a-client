@@ -1,9 +1,16 @@
 /**
  * client.js — браузерная половина @local/dsh-a2a-client.
  *
- * Одна панель в левом сайдбаре («A2A»): список агентов карточками и три
- * модальных окна — просмотр, добавление, редактирование. Проверка связи живёт
- * в окне просмотра, чтобы не занимать список.
+ * Одна панель в левом сайдбаре («A2A»): список агентов карточками и модальные
+ * окна — просмотр, добавление, редактирование и подтверждение удаления.
+ * Проверка связи живёт в окне просмотра, чтобы не занимать список.
+ *
+ * Язык панели берётся из сервиса локализации DSH (`ctx.locale`): панель
+ * показывает английский, русский или китайский текст в зависимости от того,
+ * какой язык выбран в «Настройки → Основные → Язык». Отдельной настройки
+ * языка у плагина нет; переключение в DSH применяется сразу, без перезагрузки.
+ * Языки DSH без своего словаря (ja, es, fr, de, pt) показывают английский —
+ * это запасной язык цепочки локализации DSH.
  *
  * Данные приходят с loopback-маршрута `/a2a-client/api`, поднятого host-половиной;
  * токены наружу не отдаются. Сборка не нужна: файл грузит загрузчик модулей DSH.
@@ -21,7 +28,238 @@ window.__ModuleLoader__.load({
 
       var API = '/a2a-client/api'
 
+      /** Пространство имён словарей плагина в сервисе локализации DSH. */
+      var NS = 'a2a-client'
+
+      /**
+       * Текст пробного сообщения. Это не подпись интерфейса, а полезная
+       * нагрузка: удалённый агент может понимать только английский, поэтому
+       * пробное сообщение одинаково на всех языках. Переводится только
+       * подсказка в поле ввода.
+       */
+      var DEFAULT_PROBE = 'Hello! In one sentence, tell me what you can do.'
+
       /* --------------------------------------------------------------- утилиты */
+
+      /**
+       * Все подписи панели одной таблицей: так ключи не могут разойтись между
+       * языками. Английский — запасной: на него откатываются остальные языки
+       * DSH (немецкий, испанский, французский, японский, португальский).
+       */
+      var STRINGS = {
+        'panel.globalTitle': { en: 'A2A connections', ru: 'Подключения A2A', zh: 'A2A 连接' },
+        'panel.workspaceTitle': { en: 'A2A in this workspace', ru: 'A2A в рабочей области', zh: '工作区中的 A2A' },
+        'panel.globalLead': {
+          en: 'Agent2Agent 1.0 client: agents as cards; details, editing and a test message open in dialogs.',
+          ru: 'Клиент Agent2Agent 1.0: агенты карточками, карточка агента, правка и тестовое сообщение — в модальных окнах.',
+          zh: 'Agent2Agent 1.0 客户端：智能体以卡片显示，详情、编辑与测试消息在弹窗中完成。',
+        },
+        'panel.workspaceLead': {
+          en: 'Agents of this workspace (editable here) and profile-wide connections (read-only).',
+          ru: 'Агенты этой рабочей области (правятся здесь) и глобальные подключения профиля — только для просмотра.',
+          zh: '此工作区的智能体（可在此编辑）以及 profile 的全局连接（只读）。',
+        },
+
+        'action.refresh': { en: 'Refresh', ru: 'Обновить', zh: '刷新' },
+        'action.refreshing': { en: 'Refreshing…', ru: 'Обновление…', zh: '正在刷新…' },
+        'action.addAgent': { en: 'Add agent', ru: 'Добавить агента', zh: '添加智能体' },
+        'action.close': { en: 'Close', ru: 'Закрыть', zh: '关闭' },
+        'action.cancel': { en: 'Cancel', ru: 'Отмена', zh: '取消' },
+        'action.save': { en: 'Save', ru: 'Сохранить', zh: '保存' },
+        'action.add': { en: 'Add', ru: 'Добавить', zh: '添加' },
+        'action.edit': { en: 'Edit', ru: 'Редактировать', zh: '编辑' },
+        'action.remove': { en: 'Delete', ru: 'Удалить', zh: '删除' },
+        'action.enable': { en: 'Enable', ru: 'Включить', zh: '启用' },
+        'action.disable': { en: 'Disable', ru: 'Отключить', zh: '停用' },
+        'action.verifying': { en: 'Checking…', ru: 'Проверка…', zh: '正在检查…' },
+        'action.sending': { en: 'Sending…', ru: 'Отправка…', zh: '正在发送…' },
+        'action.send': { en: 'Send', ru: 'Отправить', zh: '发送' },
+
+        'status.disabled': { en: 'Disabled', ru: 'Отключён', zh: '已停用' },
+        'status.unreachable': { en: 'Unreachable', ru: 'Нет связи', zh: '无法连接' },
+        'status.available': { en: 'Available', ru: 'Доступен', zh: '可用' },
+        'status.unknown': { en: 'Unknown', ru: 'Неизвестно', zh: '未知' },
+        'status.disabledDescription': {
+          en: 'Disabled: a2a_* tools do not use it.',
+          ru: 'Отключён: инструменты a2a_* его не используют.',
+          zh: '已停用：a2a_* 工具不会使用它。',
+        },
+        'row.open': { en: 'Open “{name}” — {status}', ru: 'Открыть «{name}» — {status}', zh: '打开“{name}”——{status}' },
+        'switch.disable': { en: 'Disable agent', ru: 'Отключить агента', zh: '停用智能体' },
+        'switch.enable': { en: 'Enable agent', ru: 'Включить агента', zh: '启用智能体' },
+
+        'state.completed': { en: 'Completed', ru: 'Завершено', zh: '已完成' },
+        'state.working': { en: 'Working', ru: 'В работе', zh: '进行中' },
+        'state.submitted': { en: 'Submitted', ru: 'Принято', zh: '已提交' },
+        'state.failed': { en: 'Failed', ru: 'Ошибка', zh: '失败' },
+        'state.canceled': { en: 'Canceled', ru: 'Отменено', zh: '已取消' },
+        'state.rejected': { en: 'Rejected', ru: 'Отклонено', zh: '已拒绝' },
+        'state.inputRequired': { en: 'Input required', ru: 'Нужен ответ', zh: '需要输入' },
+        'state.authRequired': { en: 'Auth required', ru: 'Нужна авторизация', zh: '需要授权' },
+        'state.message': { en: 'Message', ru: 'Сообщение', zh: '消息' },
+
+        'test.title': { en: 'Test message', ru: 'Тестовое сообщение', zh: '测试消息' },
+        'test.hint': {
+          en: 'Sends a real message to the remote agent; the reply appears below.',
+          ru: 'Отправляет настоящее сообщение удалённому агенту; ответ появится ниже.',
+          zh: '向远程智能体发送真实消息，回复显示在下方。',
+        },
+        'test.textAria': { en: 'Message text', ru: 'Текст сообщения', zh: '消息文本' },
+        'test.placeholder': {
+          en: 'Message text for the remote agent',
+          ru: 'Текст сообщения удалённому агенту',
+          zh: '发送给远程智能体的消息文本',
+        },
+        'test.stream': { en: 'Streaming mode (SSE)', ru: 'Потоковый режим (SSE)', zh: '流式模式（SSE）' },
+        'test.streamTitle': { en: 'Server-Sent Events', ru: 'Server-Sent Events', zh: 'Server-Sent Events' },
+        'test.empty': { en: '(empty response)', ru: '(пустой ответ)', zh: '（空响应）' },
+        'test.task': { en: 'task {id}', ru: 'задача {id}', zh: '任务 {id}' },
+        'test.context': { en: 'context {id}', ru: 'контекст {id}', zh: '上下文 {id}' },
+        'unit.seconds': { en: '{value} s', ru: '{value} с', zh: '{value} 秒' },
+
+        'details.protocol': { en: 'Protocol', ru: 'Протокол', zh: '协议' },
+        'details.version': { en: 'Agent version', ru: 'Версия агента', zh: '智能体版本' },
+        'details.skillsCount': { en: 'Skills', ru: 'Умений', zh: '技能数' },
+        'details.token': { en: 'Token', ru: 'Токен', zh: '令牌' },
+        'details.tokenSet': { en: 'set', ru: 'задан', zh: '已设置' },
+        'details.tokenUnset': { en: 'not set', ru: 'не задан', zh: '未设置' },
+        'details.timeout': { en: 'Timeout', ru: 'Таймаут', zh: '超时' },
+        'details.role': { en: 'Role', ru: 'Роль', zh: '角色' },
+        'details.defaultRole': { en: 'default agent', ru: 'агент по умолчанию', zh: '默认智能体' },
+        'details.agentRole': { en: 'agent', ru: 'агент', zh: '智能体' },
+        'details.cardTitle': { en: 'Agent card', ru: 'Карточка агента', zh: '智能体卡片' },
+        'details.skillsTitle': { en: 'Skills', ru: 'Умения', zh: '技能' },
+        'details.disabledBanner': {
+          en: 'The agent is disabled — a2a_* tools do not use it. Enable it to send a test message.',
+          ru: 'Агент отключён — инструменты a2a_* его не используют. Включите его, чтобы отправить тестовое сообщение.',
+          zh: '智能体已停用——a2a_* 工具不会使用它。启用后可发送测试消息。',
+        },
+
+        'form.addTitle': { en: 'New agent', ru: 'Новый агент', zh: '新建智能体' },
+        'form.editTitle': { en: 'Edit “{name}”', ru: 'Изменить «{name}»', zh: '编辑“{name}”' },
+        'form.workspaceSubtitle': { en: 'Workspace', ru: 'Рабочая область', zh: '工作区' },
+        'form.profileSubtitle': { en: 'Profile', ru: 'Профиль', zh: 'profile' },
+        'form.name': { en: 'Name', ru: 'Имя', zh: '名称' },
+        'form.namePlaceholder': { en: 'my-agent', ru: 'my-agent', zh: 'my-agent' },
+        'form.nameHint': {
+          en: 'Latin letters, digits, space, “_”, “.”, “-”; up to 64 characters.',
+          ru: 'Латинские буквы, цифры, пробел, «_», «.», «-»; до 64 символов.',
+          zh: '拉丁字母、数字、空格、“_”、“.”、“-”，最多 64 个字符。',
+        },
+        'form.cardUrl': { en: 'Agent Card URL', ru: 'Agent Card URL', zh: 'Agent Card 地址' },
+        'form.tokenNew': { en: 'New token (optional)', ru: 'Новый токен (необязательно)', zh: '新令牌（可选）' },
+        'form.token': { en: 'Token (optional)', ru: 'Токен (необязательно)', zh: '令牌（可选）' },
+        'form.tokenKeep': { en: 'leave empty to keep', ru: 'оставьте пустым, чтобы не менять', zh: '留空则不修改' },
+        'form.tokenPlaceholder': { en: 'Bearer token', ru: 'Bearer-токен', zh: 'Bearer 令牌' },
+        'form.timeout': { en: 'Timeout, s', ru: 'Таймаут, с', zh: '超时（秒）' },
+        'form.hintEdit': {
+          en: 'Before saving, the plugin checks the card and token at the new address. A different address needs its own token: the saved one is never sent there.',
+          ru: 'Перед сохранением плагин проверит карточку и токен по новому адресу. Другому адресу нужен свой токен: сохранённый на него не отправляется.',
+          zh: '保存前，插件会在新地址检查卡片和令牌。换了地址就需要新的令牌：已保存的令牌不会发往新地址。',
+        },
+        'form.hintAdd': {
+          en: 'Agent Card URL — e.g. http://localhost:3080/.well-known/agent-card.json. The plugin checks the address and token before saving.',
+          ru: 'Agent Card URL — например, http://localhost:3080/.well-known/agent-card.json. Перед сохранением плагин проверит адрес и токен.',
+          zh: 'Agent Card 地址，例如 http://localhost:3080/.well-known/agent-card.json。保存前插件会检查地址和令牌。',
+        },
+        'form.clearToken': { en: 'Remove the saved token', ru: 'Удалить сохранённый токен', zh: '删除已保存的令牌' },
+        'form.fillNameUrl': {
+          en: 'Fill in the name and Agent Card URL.',
+          ru: 'Укажите имя и Agent Card URL.',
+          zh: '请填写名称和 Agent Card 地址。',
+        },
+
+        'panel.loading': { en: 'Loading…', ru: 'Загрузка…', zh: '加载中…' },
+        'panel.loadFailed': { en: 'Failed to load data: {message}', ru: 'Не удалось получить данные: {message}', zh: '加载数据失败：{message}' },
+        'panel.hostMessage': { en: 'Server message: {message}', ru: 'Сообщение сервера: {message}', zh: '服务器消息：{message}' },
+        'panel.warningsTitle': { en: 'Warnings', ru: 'Предупреждения', zh: '警告' },
+        'panel.workspaceSection': { en: 'Workspace', ru: 'Рабочая область', zh: '工作区' },
+        'panel.workspaceFileMissing': { en: ' · file not created yet', ru: ' · файл ещё не создан', zh: ' · 文件尚未创建' },
+        'panel.workspaceEmpty': {
+          en: 'No agents in this workspace — add one with the button above.',
+          ru: 'В рабочей области агентов нет — нажмите «Добавить агента» выше.',
+          zh: '此工作区还没有智能体——用上方按钮添加。',
+        },
+        'panel.noWorkspace': {
+          en: 'No workspace for this session: only profile-wide connections are shown.',
+          ru: 'У этой сессии нет рабочей области: показаны только глобальные подключения.',
+          zh: '此会话没有工作区：仅显示全局连接。',
+        },
+        'panel.globalSection': { en: 'Profile-wide connections', ru: 'Глобальные подключения', zh: '全局连接' },
+        'panel.globalHint': {
+          en: 'Read-only: add and edit in the A2A sidebar panel.',
+          ru: 'Только просмотр: добавление и правка — в боковой панели A2A.',
+          zh: '只读：请在 A2A 侧边栏中添加和编辑。',
+        },
+        'panel.globalEmpty': { en: 'No profile-wide agents.', ru: 'Глобальных агентов нет.', zh: '没有全局智能体。' },
+        'panel.empty': {
+          en: 'No agents yet. Add the first one with the button above.',
+          ru: 'Агентов пока нет. Нажмите «Добавить агента» выше.',
+          zh: '还没有智能体。用上方按钮添加第一个。',
+        },
+        'panel.storeLine': { en: 'Registry: {file} · source: {source}', ru: 'Реестр: {file} · источник: {source}', zh: '清单文件：{file} · 来源：{source}' },
+        'panel.snapshot': { en: ' · snapshot {time}', ru: ' · снимок {time}', zh: ' · 快照 {time}' },
+        'panel.sourceFile': { en: 'a2a-client.json', ru: 'a2a-client.json', zh: 'a2a-client.json' },
+        'panel.sourceConfig': { en: 'plugin config', ru: 'конфиг плагина', zh: '插件配置' },
+        'panel.removeTitle': { en: 'Delete agent', ru: 'Удалить агента', zh: '删除智能体' },
+        'panel.removeConfirm': { en: 'Delete “{name}”?', ru: 'Удалить «{name}»?', zh: '删除“{name}”？' },
+        'panel.removeHint': {
+          en: 'The agent is removed from the registry; its saved token is dropped too.',
+          ru: 'Агент удаляется из реестра; сохранённый токен тоже удаляется.',
+          zh: '该智能体将从清单文件中移除，已保存的令牌也会删除。',
+        },
+      }
+
+      /** Один язык словарём: `{ key: text }` для `ctx.locale.register`. */
+      function dictionary(language) {
+        var dict = {}
+        Object.keys(STRINGS).forEach(function (key) {
+          dict[key] = STRINGS[key][language]
+        })
+        return dict
+      }
+
+      /** Подставляет `{name}`-параметры в шаблон (та же схема, что у DSH). */
+      function format(template, params) {
+        if (!params) return String(template)
+        return String(template).replace(/\{(\w+)\}/g, function (match, name) {
+          return Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+        })
+      }
+
+      /**
+       * Запасной переводчик: слот передаёт `t`, но если он почему-то не пришёл
+       * (другой рендерер, отладка), панель показывает английский текст, а не
+       * ключи. Без сервиса локализации плагин не активируется вовсе — это
+       * заявленная зависимость `inject: ['slots', 'locale']`.
+       */
+      function fallbackTranslate(key, params) {
+        var entry = STRINGS[key]
+        return format(entry ? entry.en : key, params)
+      }
+
+      function translator(props) {
+        return (props && props.t) || fallbackTranslate
+      }
+
+      /**
+       * Ошибка в состоянии панели: либо ключ словаря (`{ key }`), либо готовый
+       * текст от host-половины (`{ text }`, по-русски). Ключ переводится при
+       * отрисовке, поэтому смена языка переводит и уже показанную ошибку.
+       */
+      function localError(key) {
+        return { key: key }
+      }
+
+      function hostError(error) {
+        return { text: errorText(error) }
+      }
+
+      function errorNode(error, t, style) {
+        if (!error) return null
+        var text = error.key ? t(error.key) : t('panel.hostMessage', { message: error.text })
+        return h('div', { role: 'alert', style: style }, text)
+      }
 
       function readJson(response) {
         return response.json().then(function (json) {
@@ -53,20 +291,29 @@ window.__ModuleLoader__.load({
         return String((error && error.message) || error)
       }
 
-      function stateLabel(state) {
+      function stateLabel(state, t) {
         var map = {
-          TASK_STATE_COMPLETED: 'завершена',
-          TASK_STATE_WORKING: 'в работе',
-          TASK_STATE_SUBMITTED: 'принята',
-          TASK_STATE_FAILED: 'ошибка',
-          TASK_STATE_CANCELED: 'отменена',
-          TASK_STATE_CANCELLED: 'отменена',
-          TASK_STATE_REJECTED: 'отклонена',
-          TASK_STATE_INPUT_REQUIRED: 'нужен ответ',
-          TASK_STATE_AUTH_REQUIRED: 'нужна авторизация',
-          MESSAGE: 'сообщение',
+          TASK_STATE_COMPLETED: 'state.completed',
+          TASK_STATE_WORKING: 'state.working',
+          TASK_STATE_SUBMITTED: 'state.submitted',
+          TASK_STATE_FAILED: 'state.failed',
+          TASK_STATE_CANCELED: 'state.canceled',
+          TASK_STATE_CANCELLED: 'state.canceled',
+          TASK_STATE_REJECTED: 'state.rejected',
+          TASK_STATE_INPUT_REQUIRED: 'state.inputRequired',
+          TASK_STATE_AUTH_REQUIRED: 'state.authRequired',
+          MESSAGE: 'state.message',
         }
-        return map[state] || state || '—'
+        return map[state] ? t(map[state]) : t('status.unknown')
+      }
+
+      /** Цвет плашки состояния задачи: зелёный только у успешных исходов. */
+      function stateColor(state) {
+        if (state === 'TASK_STATE_COMPLETED') return COLORS.ok
+        if (state === 'TASK_STATE_FAILED' || state === 'TASK_STATE_REJECTED') return COLORS.error
+        if (state === 'TASK_STATE_CANCELED' || state === 'TASK_STATE_CANCELLED') return COLORS.muted
+        if (state === 'TASK_STATE_WORKING' || state === 'TASK_STATE_SUBMITTED') return COLORS.brand
+        return COLORS.warn
       }
 
       /* ---------------------------------------------------------------- токены */
@@ -83,6 +330,17 @@ window.__ModuleLoader__.load({
         warn: 'var(--dsw-alias-state-warn-primary)',
         error: 'var(--dsw-alias-state-error-primary)',
       }
+
+      /**
+       * Единственный CSS-фрагмент панели: только то, что нельзя выразить
+       * инлайновым стилем — видимый фокус клавиатуры. Рендерится элементом
+       * внутри панели, поэтому исчезает вместе с ней.
+       */
+      var CSS = [
+        '.a2a-focus:focus-visible{outline:2px solid ' + COLORS.brand + ';outline-offset:2px}',
+        '.a2a-row:focus-visible{outline:2px solid ' + COLORS.brand + ';outline-offset:3px;border-radius:8px}',
+        '.a2a-switch input:focus-visible+span{outline:2px solid ' + COLORS.brand + ';outline-offset:2px}',
+      ].join('')
 
       var styles = {
         page: {
@@ -251,6 +509,7 @@ window.__ModuleLoader__.load({
           padding: '20px 22px',
           boxShadow: '0 24px 64px rgba(0, 0, 0, 0.45)',
           color: COLORS.text,
+          outline: 'none',
         },
         modalHeader: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' },
         modalTitle: { margin: 0, fontSize: '16px', fontWeight: 600, lineHeight: '22px' },
@@ -303,6 +562,7 @@ window.__ModuleLoader__.load({
           lineHeight: '20px',
           outline: 'none',
         },
+        fieldHint: { fontSize: '11px', lineHeight: '16px', color: COLORS.muted },
         textarea: {
           width: '100%',
           boxSizing: 'border-box',
@@ -322,6 +582,17 @@ window.__ModuleLoader__.load({
 
         banner: {
           border: '1px solid ' + COLORS.error,
+          borderRadius: '10px',
+          padding: '10px 12px',
+          marginBottom: '14px',
+          fontSize: '12.5px',
+          lineHeight: '18px',
+          color: COLORS.text,
+          background: COLORS.card,
+          whiteSpace: 'pre-wrap',
+        },
+        warnBanner: {
+          border: '1px solid ' + COLORS.warn,
           borderRadius: '10px',
           padding: '10px 12px',
           marginBottom: '14px',
@@ -364,22 +635,36 @@ window.__ModuleLoader__.load({
         return Object.assign({}, styles.badge, { color: color })
       }
 
+      function sectionTitle(key, t, extra) {
+        // В панели разделы идут под h2 страницы, в окнах — под h3 заголовка:
+        // уровень передаётся, чтобы не перескакивать через ступень.
+        var options = extra || {}
+        var tag = options.tag || 'h4'
+        var style = Object.assign({}, styles.sectionTitle, options.style || null)
+        return h(tag, { style: style }, t(key))
+      }
+
       /* ------------------------------------------------------------- атомарные */
 
       function Switch(props) {
+        var t = translator(props)
+        var title = props.enabled ? t('switch.disable') : t('switch.enable')
         return h(
           'label',
           {
+            className: 'a2a-switch',
             style: Object.assign({}, styles.switchLabel, props.disabled ? { opacity: 0.5, cursor: 'default' } : null),
-            title: props.enabled ? 'Отключить агента' : 'Включить агента',
+            title: title,
           },
           h('input', {
             type: 'checkbox',
+            role: 'switch',
             checked: props.enabled,
             disabled: props.disabled,
             onChange: props.onChange,
             style: { position: 'absolute', opacity: 0, width: '1px', height: '1px' },
-            'aria-label': props.enabled ? 'Отключить агента' : 'Включить агента',
+            'aria-label': title,
+            'aria-checked': props.enabled ? 'true' : 'false',
           }),
           h(
             'span',
@@ -422,6 +707,7 @@ window.__ModuleLoader__.load({
             title: props.title,
             'aria-label': props.title,
             disabled: props.disabled,
+            className: 'a2a-focus',
             style: Object.assign({}, styles.iconBtn, props.danger ? styles.iconBtnDanger : null, props.disabled ? { opacity: 0.5, cursor: 'default' } : null),
             onClick: props.onClick,
           },
@@ -429,15 +715,15 @@ window.__ModuleLoader__.load({
         )
       }
 
-      function statusOf(agent) {
-        if (agent.enabled === false) return { label: 'отключён', color: COLORS.warn }
-        if (agent.error) return { label: 'нет связи', color: COLORS.error }
-        if (agent.card) return { label: 'доступен', color: COLORS.ok }
-        return { label: 'неизвестно', color: COLORS.muted }
+      function statusOf(agent, t) {
+        if (agent.enabled === false) return { label: t('status.disabled'), color: COLORS.warn }
+        if (agent.error) return { label: t('status.unreachable'), color: COLORS.error }
+        if (agent.card) return { label: t('status.available'), color: COLORS.ok }
+        return { label: t('status.unknown'), color: COLORS.muted }
       }
 
-      function agentDescription(agent) {
-        if (agent.enabled === false) return 'Отключён: инструменты a2a_* его не используют.'
+      function agentDescription(agent, t) {
+        if (agent.enabled === false) return t('status.disabledDescription')
         if (agent.error) return agent.error
         if (agent.card && agent.card.description) return agent.card.description
         return agent.cardUrl
@@ -446,8 +732,9 @@ window.__ModuleLoader__.load({
       /* ---------------------------------------------------------------- строка */
 
       function AgentRow(props) {
+        var t = translator(props)
         var agent = props.agent
-        var status = statusOf(agent)
+        var status = statusOf(agent, t)
         return h(
           'div',
           { style: styles.listCard },
@@ -456,7 +743,15 @@ window.__ModuleLoader__.load({
             { style: styles.row },
             h(
               'button',
-              { type: 'button', style: styles.rowMain, onClick: props.onOpen, 'aria-label': 'Открыть «' + agent.name + '»' },
+              {
+                type: 'button',
+                className: 'a2a-row',
+                style: styles.rowMain,
+                onClick: props.onOpen,
+                // Статус — единственный индикатор состояния строки, поэтому он
+                // входит в доступное имя кнопки, а не только в цветную плашку.
+                'aria-label': t('row.open', { name: agent.name, status: status.label }),
+              },
               h(
                 'span',
                 { style: styles.rowTitle },
@@ -464,7 +759,7 @@ window.__ModuleLoader__.load({
                 h('span', { style: styles.name }, agent.name),
                 h('span', { style: badgeStyle(status.color) }, status.label),
               ),
-              h('span', { style: styles.rowDesc }, agentDescription(agent)),
+              h('span', { style: styles.rowDesc }, agentDescription(agent, t)),
               h('span', { style: styles.mono }, agent.cardUrl),
             ),
             props.readOnly
@@ -472,9 +767,9 @@ window.__ModuleLoader__.load({
               : h(
                 'div',
                 { style: styles.controls },
-                h(Switch, { enabled: agent.enabled !== false, disabled: props.busy, onChange: props.onToggle }),
-                h(IconButton, { title: 'Редактировать', disabled: props.busy, onClick: props.onEdit }, h(PencilIcon, null)),
-                h(IconButton, { title: 'Удалить', danger: true, disabled: props.busy, onClick: props.onRemove }, h(TrashIcon, null)),
+                h(Switch, { enabled: agent.enabled !== false, disabled: props.busy, onChange: props.onToggle, t: t }),
+                h(IconButton, { title: t('action.edit'), disabled: props.busy, onClick: props.onEdit }, h(PencilIcon, null)),
+                h(IconButton, { title: t('action.remove'), danger: true, disabled: props.busy, onClick: props.onRemove }, h(TrashIcon, null)),
               ),
           ),
         )
@@ -483,15 +778,68 @@ window.__ModuleLoader__.load({
       /* --------------------------------------------------------------- модалка */
 
       function Modal(props) {
+        var t = translator(props)
+        var dialogRef = React.useRef(null)
+        var previousFocus = React.useRef(null)
+        var titleId = 'a2a-dialog-title'
+
         useEffect(function () {
           function onKey(event) {
-            if (event.key === 'Escape') props.onClose()
+            if (event.key !== 'Escape' || event.defaultPrevented) return
+            // Escape сначала снимает подтверждение удаления, и только второе
+            // нажатие закрывает окно. Пока идёт запрос, окно не закрывается.
+            if (props.onEscape) props.onEscape(event)
+            else props.onClose()
           }
           window.addEventListener('keydown', onKey)
           return function () {
             window.removeEventListener('keydown', onKey)
           }
-        }, [props.onClose])
+        }, [props.onClose, props.onEscape])
+
+        // Фокус переносится в окно при открытии и возвращается при закрытии:
+        // без этого Tab уходит в панель под оверлеем. Tab удерживается внутри
+        // окна — оверлей объявлен модальным, значит фон недоступен.
+        useEffect(function () {
+          previousFocus.current = typeof document !== 'undefined' ? document.activeElement : null
+          var node = dialogRef.current
+          if (!node || typeof node.focus !== 'function') {
+            return function () {
+              var previous = previousFocus.current
+              if (previous && typeof previous.focus === 'function') previous.focus()
+            }
+          }
+          node.focus()
+
+          function onKeyDown(event) {
+            if (event.key !== 'Tab' || !node) return
+            var focusable = node.querySelectorAll(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            )
+            if (focusable.length === 0) {
+              event.preventDefault()
+              node.focus()
+              return
+            }
+            var first = focusable[0]
+            var last = focusable[focusable.length - 1]
+            var active = document.activeElement
+            if (event.shiftKey && (active === first || active === node)) {
+              event.preventDefault()
+              last.focus()
+            } else if (!event.shiftKey && active === last) {
+              event.preventDefault()
+              first.focus()
+            }
+          }
+
+          node.addEventListener('keydown', onKeyDown)
+          return function () {
+            node.removeEventListener('keydown', onKeyDown)
+            var previous = previousFocus.current
+            if (previous && typeof previous.focus === 'function') previous.focus()
+          }
+        }, [])
 
         return h(
           'div',
@@ -503,20 +851,27 @@ window.__ModuleLoader__.load({
           },
           h(
             'div',
-            { role: 'dialog', 'aria-modal': 'true', 'aria-label': props.label, style: styles.dialog },
+            {
+              ref: dialogRef,
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-labelledby': titleId,
+              tabIndex: -1,
+              style: styles.dialog,
+            },
             h(
               'div',
               { style: styles.modalHeader },
               h(
                 'div',
                 null,
-                h('h3', { style: styles.modalTitle }, props.title),
+                h('h3', { id: titleId, style: styles.modalTitle }, props.title),
                 props.subtitle ? h('p', { style: styles.modalSub }, props.subtitle) : null,
               ),
-              h(IconButton, { title: 'Закрыть', onClick: props.onClose }, h('span', { style: { fontSize: '15px', lineHeight: '15px' } }, '×')),
+              h(IconButton, { title: t('action.close'), onClick: props.onClose }, h('span', { style: { fontSize: '15px', lineHeight: '15px' } }, '×')),
             ),
             h('div', { style: styles.modalBody }, props.children),
-            h('div', { style: styles.modalFooter }, props.footer),
+            props.footer ? h('div', { style: styles.modalFooter }, props.footer) : null,
           ),
         )
       }
@@ -524,9 +879,13 @@ window.__ModuleLoader__.load({
       /* ------------------------------------------------------------------ тест */
 
       function TestPanel(props) {
-        var textState = useState('Привет! Ответь одним предложением, что ты умеешь.')
-        var text = textState[0]
-        var setText = textState[1]
+        var t = translator(props)
+        // Пробное сообщение не хранится как переведённая строка: по умолчанию
+        // берётся английский текст (payload для удалённого агента), а правка
+        // пользователя живёт в черновике и переживает смену языка.
+        var draftState = useState(null)
+        var draft = draftState[0]
+        var setDraft = draftState[1]
         var streamState = useState(false)
         var stream = streamState[0]
         var setStream = streamState[1]
@@ -540,6 +899,8 @@ window.__ModuleLoader__.load({
         var error = errorState[0]
         var setError = errorState[1]
 
+        var text = draft === null ? DEFAULT_PROBE : draft
+
         function submit() {
           if (busy || !text.trim()) return
           setBusy(true)
@@ -550,7 +911,7 @@ window.__ModuleLoader__.load({
               setBusy(false)
             },
             function (failure) {
-              setError(errorText(failure))
+              setError(hostError(failure))
               setResult(null)
               setBusy(false)
             },
@@ -560,15 +921,16 @@ window.__ModuleLoader__.load({
         return h(
           'div',
           null,
-          h('div', { style: styles.sectionTitle }, 'Проверка связи'),
+          sectionTitle('test.title', t, { style: { marginTop: 0 } }),
+          h('p', { style: styles.hint }, t('test.hint')),
           h('textarea', {
             value: text,
             rows: 3,
             style: styles.textarea,
-            'aria-label': 'Текст сообщения',
-            placeholder: 'Текст сообщения удалённому агенту',
+            'aria-label': t('test.textAria'),
+            placeholder: t('test.placeholder'),
             onChange: function (event) {
-              setText(event.target.value)
+              setDraft(event.target.value)
             },
           }),
           h(
@@ -585,20 +947,21 @@ window.__ModuleLoader__.load({
                   setStream(event.target.checked)
                 },
               }),
-              'потоковый режим (SSE)',
+              t('test.stream'),
             ),
             h(
               'button',
               {
                 type: 'button',
+                className: 'a2a-focus',
                 style: Object.assign({}, styles.primary, busy ? { opacity: 0.6, cursor: 'default' } : null),
                 onClick: submit,
                 disabled: busy,
               },
-              busy ? 'Отправляю…' : 'Отправить',
+              busy ? t('action.sending') : t('action.send'),
             ),
           ),
-          error ? h('div', { style: Object.assign({}, styles.banner, { marginTop: '12px', marginBottom: 0 }) }, error) : null,
+          errorNode(error, t, Object.assign({}, styles.banner, { marginTop: '12px', marginBottom: 0 })),
           result
             ? h(
               'div',
@@ -606,18 +969,29 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { style: styles.rowTitle },
-                h('span', { style: badgeStyle(COLORS.ok) }, stateLabel(result.state)),
-                h('span', { style: styles.meta }, (result.durationMs / 1000).toFixed(1) + ' с'),
-                result.streaming ? h('span', { style: styles.chip }, 'SSE') : null,
+                h('span', { style: badgeStyle(stateColor(result.state)) }, stateLabel(result.state, t)),
+                h('span', { style: styles.meta }, t('unit.seconds', { value: (result.durationMs / 1000).toFixed(1) })),
+                result.streaming ? h('span', { title: t('test.streamTitle'), style: styles.chip }, 'SSE') : null,
               ),
-              h('pre', { style: styles.answer }, result.text || '(пустой ответ)'),
+              h('pre', { style: styles.answer }, result.text || t('test.empty')),
               h(
                 'div',
                 { style: styles.mono },
-                [result.taskId ? 'задача ' + result.taskId : null, result.contextId ? 'контекст ' + result.contextId : null]
+                [result.taskId ? t('test.task', { id: result.taskId }) : null, result.contextId ? t('test.context', { id: result.contextId }) : null]
                   .filter(Boolean)
                   .join(' · '),
               ),
+              // Сервер сообщает, если учётные данные не отправлены: без этой
+              // строки «агент ответил без токена» выглядело бы загадкой.
+              Array.isArray(result.notices) && result.notices.length > 0
+                ? h(
+                  'div',
+                  { role: 'alert', style: Object.assign({}, styles.warnBanner, { marginTop: '10px' }) },
+                  result.notices.map(function (notice, index) {
+                    return h('div', { key: 'notice-' + index }, t('panel.hostMessage', { message: notice }))
+                  }),
+                )
+                : null,
             )
             : null,
         )
@@ -626,15 +1000,16 @@ window.__ModuleLoader__.load({
       /* -------------------------------------------------------------- просмотр */
 
       function DetailsBody(props) {
+        var t = translator(props)
         var agent = props.agent
         var card = agent.card
         var rows = [
-          { key: 'protocol', label: 'Протокол', value: (card && card.protocolVersion) || '1.0' },
-          { key: 'version', label: 'Версия агента', value: (card && card.version) || '—' },
-          { key: 'skills', label: 'Умений', value: card ? String(card.skills.length) : '—' },
-          { key: 'token', label: 'Токен', value: agent.hasToken ? 'задан' : 'не задан' },
-          { key: 'timeout', label: 'Таймаут', value: Math.round((agent.timeoutMs || 0) / 1000) + ' с' },
-          { key: 'role', label: 'Роль', value: props.defaultAgent === agent.name ? 'агент по умолчанию' : 'агент' },
+          { key: 'protocol', label: t('details.protocol'), value: (card && card.protocolVersion) || '1.0' },
+          { key: 'version', label: t('details.version'), value: (card && card.version) || '—' },
+          { key: 'skills', label: t('details.skillsCount'), value: card ? String(card.skills.length) : '—' },
+          { key: 'token', label: t('details.token'), value: agent.hasToken ? t('details.tokenSet') : t('details.tokenUnset') },
+          { key: 'timeout', label: t('details.timeout'), value: t('unit.seconds', { value: Math.round((agent.timeoutMs || 0) / 1000) }) },
+          { key: 'role', label: t('details.role'), value: props.defaultAgent === agent.name ? t('details.defaultRole') : t('details.agentRole') },
         ]
 
         var body = [
@@ -653,11 +1028,11 @@ window.__ModuleLoader__.load({
         ]
 
         if (agent.error) {
-          body.push(h('div', { key: 'err', style: Object.assign({}, styles.banner, { marginTop: '14px' }) }, agent.error))
+          body.push(h('div', { key: 'err', role: 'alert', style: Object.assign({}, styles.banner, { marginTop: '14px' }) }, agent.error))
         }
 
         if (card) {
-          body.push(h('div', { key: 'card-title', style: styles.sectionTitle }, 'Карточка агента'))
+          body.push(sectionTitle('details.cardTitle', t))
           if (card.description) {
             body.push(h('p', { key: 'card-desc', style: { margin: '0 0 4px', fontSize: '12.5px', lineHeight: '18px' } }, card.description))
           }
@@ -678,7 +1053,7 @@ window.__ModuleLoader__.load({
             )
           }
           if (card.skills.length > 0) {
-            body.push(h('div', { key: 'skills-title', style: styles.sectionTitle }, 'Умения'))
+            body.push(sectionTitle('details.skillsTitle', t))
             card.skills.forEach(function (skill) {
               body.push(
                 h(
@@ -705,12 +1080,12 @@ window.__ModuleLoader__.load({
           body.push(
             h(
               'div',
-              { key: 'off', style: Object.assign({}, styles.banner, { borderColor: COLORS.warn, marginTop: '14px', marginBottom: 0 }) },
-              'Агент отключён — инструменты a2a_* его не используют. Включите его, чтобы проверить связь.',
+              { key: 'off', style: Object.assign({}, styles.warnBanner, { marginTop: '14px', marginBottom: 0 }) },
+              t('details.disabledBanner'),
             ),
           )
         } else {
-          body.push(h('div', { key: 'test' }, h(TestPanel, { agent: agent.name, scope: props.scope, sessionId: props.sessionId })))
+          body.push(h('div', { key: 'test' }, h(TestPanel, { agent: agent.name, scope: props.scope, sessionId: props.sessionId, t: t })))
         }
 
         return h('div', null, body)
@@ -719,6 +1094,7 @@ window.__ModuleLoader__.load({
       /* ----------------------------------------------------------- форма агента */
 
       function AgentForm(props) {
+        var t = translator(props)
         var editing = props.mode === 'edit' && props.agent
         var nameState = useState(editing ? props.agent.name : '')
         var name = nameState[0]
@@ -736,18 +1112,19 @@ window.__ModuleLoader__.load({
         var timeout = timeoutState[0]
         var setTimeoutSec = timeoutState[1]
 
-        function field(key, label, inputProps) {
+        function field(key, label, inputProps, hint) {
           return h(
             'label',
             { key: key, style: styles.fieldGroup },
             h('span', { style: styles.fieldLabel }, label),
-            h('input', Object.assign({ style: styles.field }, inputProps)),
+            h('input', Object.assign({ className: 'a2a-focus', style: styles.field }, inputProps)),
+            hint ? h('span', { style: styles.fieldHint }, hint) : null,
           )
         }
 
         function submit() {
           if (!name.trim() || !url.trim()) {
-            props.onError('Заполните имя и Agent Card URL.')
+            props.onError(localError('form.fillNameUrl'))
             return
           }
           var record = {
@@ -757,19 +1134,22 @@ window.__ModuleLoader__.load({
           }
           if (token.trim()) record.token = token.trim()
           if (clearToken) record.clearToken = true
-          props.onSubmit(record)
+          // submitForm сообщает об ошибке сам; гасим отказ, чтобы он не стал
+          // необработанным отклонением промиса.
+          var pending = props.onSubmit(record)
+          if (pending && typeof pending.catch === 'function') pending.catch(function () {})
         }
 
         var fields = [
-          field('name', 'Имя', {
+          field('name', t('form.name'), {
             value: name,
-            placeholder: 'test',
+            placeholder: t('form.namePlaceholder'),
             disabled: props.busy,
             onChange: function (event) {
               setName(event.target.value)
             },
-          }),
-          field('url', 'Agent Card URL', {
+          }, t('form.nameHint')),
+          field('url', t('form.cardUrl'), {
             value: url,
             placeholder: 'http://localhost:3080/.well-known/agent-card.json',
             disabled: props.busy,
@@ -777,16 +1157,16 @@ window.__ModuleLoader__.load({
               setUrl(event.target.value)
             },
           }),
-          field('token', editing ? 'Новый токен (необязательно)' : 'Токен (необязательно)', {
+          field('token', editing ? t('form.tokenNew') : t('form.token'), {
             value: token,
             type: 'password',
-            placeholder: editing ? 'оставьте пустым, чтобы не менять' : 'Bearer-токен',
+            placeholder: editing ? t('form.tokenKeep') : t('form.tokenPlaceholder'),
             disabled: props.busy || clearToken,
             onChange: function (event) {
               setToken(event.target.value)
             },
           }),
-          field('timeout', 'Таймаут, с', {
+          field('timeout', t('form.timeout'), {
             value: timeout,
             type: 'number',
             min: '5',
@@ -803,9 +1183,7 @@ window.__ModuleLoader__.load({
           h(
             'p',
             { style: styles.hint },
-            editing
-              ? 'Перед сохранением плагин проверит карточку и токен по новому адресу.'
-              : 'Agent Card URL — например http://localhost:3080/.well-known/agent-card.json. Перед сохранением плагин проверит адрес и токен.',
+            editing ? t('form.hintEdit') : t('form.hintAdd'),
           ),
           h('div', { style: styles.formGrid }, fields),
           editing && props.agent.hasToken
@@ -820,10 +1198,10 @@ window.__ModuleLoader__.load({
                   setClearToken(event.target.checked)
                 },
               }),
-              'Удалить сохранённый токен',
+              t('form.clearToken'),
             )
             : null,
-          props.error ? h('div', { style: Object.assign({}, styles.banner, { marginTop: '12px', marginBottom: 0 }) }, props.error) : null,
+          errorNode(props.error, t, Object.assign({}, styles.banner, { marginTop: '12px', marginBottom: 0 })),
           h(
             'div',
             { style: styles.actionRow },
@@ -831,16 +1209,17 @@ window.__ModuleLoader__.load({
               'button',
               {
                 type: 'button',
+                className: 'a2a-focus',
                 style: Object.assign({}, styles.primary, props.busy ? { opacity: 0.6, cursor: 'default' } : null),
                 disabled: props.busy,
                 onClick: submit,
               },
-              props.busy ? 'Проверяю…' : editing ? 'Сохранить' : 'Добавить',
+              props.busy ? t('action.verifying') : editing ? t('action.save') : t('action.add'),
             ),
             h(
               'button',
-              { type: 'button', style: styles.ghost, disabled: props.busy, onClick: props.onCancel },
-              'Отмена',
+              { type: 'button', className: 'a2a-focus', style: styles.ghost, disabled: props.busy, onClick: props.onCancel },
+              t('action.cancel'),
             ),
           ),
         )
@@ -854,6 +1233,7 @@ window.__ModuleLoader__.load({
        * глобальные подключения профиля только читаются).
        */
       function A2APanel(props) {
+        var t = translator(props)
         var scope = props && props.scope === 'workspace' ? 'workspace' : 'global'
         var sessionId = props && props.sessionId ? String(props.sessionId) : ''
         var isWorkspace = scope === 'workspace'
@@ -903,7 +1283,7 @@ window.__ModuleLoader__.load({
                 return json
               },
               function (failure) {
-                setError(errorText(failure))
+                setError(hostError(failure))
                 setBusy(null)
                 throw failure
               },
@@ -917,10 +1297,14 @@ window.__ModuleLoader__.load({
         }, [load])
 
         var data = snapshot.data
+        var ready = snapshot.phase === 'ready' || snapshot.phase === 'refreshing'
         var localAgents = data && Array.isArray(data.agents) ? data.agents : []
         var globalAgents = data && Array.isArray(data.globalAgents) ? data.globalAgents : []
         var workspace = data && data.workspace ? data.workspace : null
-        var pool = modal && modal.scope === 'global' ? globalAgents : localAgents
+        // Модалка ищет агента в том списке, из которого его открыли: в боковой
+        // панели это реестр профиля, во вкладке беседы — ещё и глобальный
+        // список, который там показан только для чтения.
+        var pool = isWorkspace && modal && modal.scope === 'global' ? globalAgents : localAgents
         var current = null
         if (modal && modal.name) {
           for (var index = 0; index < pool.length; index += 1) {
@@ -930,12 +1314,32 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        var readOnly = Boolean(current) && isWorkspace && modal.scope === 'global'
+        var readOnly = Boolean(current) && isWorkspace && modal && modal.scope === 'global'
+
+        /**
+         * Закрытие окна. Пока идёт запрос именно этого окна, оно не закрывается:
+         * иначе результат пришёл бы в никуда. Действие над другим агентом
+         * (переключатель в списке) закрытию не мешает.
+         */
+        function modalBusy() {
+          return Boolean(busy) && Boolean(modal) && (busy === modal.name || busy === 'add' || busy === 'panel')
+        }
 
         function closeModal() {
+          if (modalBusy()) return
           setModal(null)
           setConfirmRemove(false)
           setError(null)
+        }
+
+        /** Escape в окне просмотра сначала снимает подтверждение удаления. */
+        function escapeModal(event) {
+          if (event) event.stopPropagation()
+          if (confirmRemove) {
+            setConfirmRemove(false)
+            return
+          }
+          closeModal()
         }
 
         function openView(agent, agentScope) {
@@ -956,6 +1360,13 @@ window.__ModuleLoader__.load({
           setModal({ mode: 'add', scope: isWorkspace ? 'workspace' : 'global' })
         }
 
+        /** Удаление из строки спрашивает подтверждение отдельным окном. */
+        function openRemove(agent, agentScope) {
+          setConfirmRemove(false)
+          setError(null)
+          setModal({ mode: 'confirm', name: agent.name, scope: agentScope })
+        }
+
         function toggleAgent(agent) {
           act({ action: agent.enabled === false ? 'enable' : 'disable', agent: agent.name }, agent.name).catch(function () {})
         }
@@ -970,7 +1381,10 @@ window.__ModuleLoader__.load({
             : { action: 'add', agent: record }
           return act(request, modal.name || 'add').then(
             function (json) {
-              setModal({ mode: 'view', name: record.name, scope: isWorkspace ? 'workspace' : 'global' })
+              // Окно могло закрыться, пока шёл запрос: тогда не открываем его снова.
+              setModal(function (previous) {
+                return previous ? { mode: 'view', name: record.name, scope: isWorkspace ? 'workspace' : 'global' } : previous
+              })
               setError(null)
               return json
             },
@@ -990,6 +1404,7 @@ window.__ModuleLoader__.load({
                 agent: agent,
                 readOnly: onlyReadOnly,
                 busy: busy === agent.name,
+                t: t,
                 onToggle: function () {
                   toggleAgent(agent)
                 },
@@ -997,8 +1412,7 @@ window.__ModuleLoader__.load({
                   openEdit(agent)
                 },
                 onRemove: function () {
-                  openView(agent, agentScope)
-                  setConfirmRemove(true)
+                  openRemove(agent, agentScope)
                 },
                 onOpen: function () {
                   openView(agent, agentScope)
@@ -1010,92 +1424,102 @@ window.__ModuleLoader__.load({
 
         var body = []
         if (error && !modal) {
-          body.push(h('div', { key: 'action-error', style: styles.banner }, error))
+          body.push(h('div', { key: 'action-error' }, errorNode(error, t, styles.banner)))
         }
         if (snapshot.error) {
-          body.push(h('div', { key: 'banner', style: styles.banner }, 'Не удалось получить данные: ' + snapshot.error))
+          body.push(h('div', { key: 'banner', role: 'alert', style: styles.banner }, t('panel.loadFailed', { message: snapshot.error })))
         }
+        // Предупреждения приходят из host-половины по-русски: они помечаются
+        // так же, как любое другое сообщение сервера, чтобы не выглядеть
+        // собственными подписями панели.
         if (data && Array.isArray(data.warnings) && data.warnings.length > 0) {
           body.push(
             h(
               'div',
-              { key: 'warn', style: styles.banner },
+              { key: 'warn', style: styles.warnBanner },
+              h('div', { style: { fontWeight: 600, marginBottom: '4px' } }, t('panel.warningsTitle')),
               data.warnings.map(function (warning) {
-                return h('div', { key: warning }, '• ' + warning)
+                return h('div', { key: warning }, '• ' + t('panel.hostMessage', { message: warning }))
               }),
             ),
           )
         }
         if (snapshot.phase === 'loading') {
-          body.push(h('div', { key: 'loading', style: styles.meta }, 'Загрузка…'))
+          body.push(h('div', { key: 'loading', role: 'status', style: styles.meta }, t('panel.loading')))
         }
 
+        // Пустые состояния показываются только по готовым данным: иначе на
+        // время загрузки и после ошибки панель утверждала бы «агентов нет».
         if (isWorkspace) {
-          body.push(h('div', { key: 'ws-title', style: styles.sectionTitle }, 'Рабочая область'))
-          body.push(
-            h(
-              'div',
-              { key: 'ws-path', style: Object.assign({}, styles.meta, { marginBottom: '8px', wordBreak: 'break-all' }) },
-              workspace ? workspace.path + (workspace.exists ? '' : ' · файл ещё не создан') : 'рабочая область не определена',
-            ),
-          )
+          body.push(sectionTitle('panel.workspaceSection', t, { tag: 'h3' }))
           if (workspace) {
             body.push(
               h(
                 'div',
+                { key: 'ws-path', style: Object.assign({}, styles.meta, { marginBottom: '8px', wordBreak: 'break-all' }) },
+                workspace.path + (workspace.exists ? '' : t('panel.workspaceFileMissing')),
+              ),
+            )
+            body.push(
+              h(
+                'div',
                 { key: 'ws-toolbar', style: styles.toolbar },
-                h('button', { type: 'button', style: styles.primary, onClick: openAdd }, 'Добавить агента'),
+                h('button', { type: 'button', className: 'a2a-focus', style: styles.primary, onClick: openAdd }, t('action.addAgent')),
               ),
             )
           }
           body.push(
             localAgents.length > 0
               ? h('div', { key: 'ws-list' }, renderRows(localAgents, 'workspace', false))
-              : h(
-                'div',
-                { key: 'ws-empty', style: styles.empty },
-                workspace
-                  ? 'В рабочей области агентов нет — добавьте кнопкой выше.'
-                  : 'Нет рабочей области: показаны только глобальные подключения.',
-              ),
+              : workspace
+                ? ready
+                  ? h('div', { key: 'ws-empty', style: styles.empty }, t('panel.workspaceEmpty'))
+                  : null
+                : ready
+                  ? h('div', { key: 'ws-empty', style: styles.empty }, t('panel.noWorkspace'))
+                  : null,
           )
 
-          body.push(h('div', { key: 'global-title', style: styles.sectionTitle }, 'Глобальные подключения'))
+          body.push(sectionTitle('panel.globalSection', t, { tag: 'h3' }))
           body.push(
             h(
               'div',
               { key: 'global-hint', style: Object.assign({}, styles.meta, { marginBottom: '8px' }) },
-              'Только просмотр: добавление и правка — в боковой панели A2A.',
+              t('panel.globalHint'),
             ),
           )
           body.push(
             globalAgents.length > 0
               ? h('div', { key: 'global-list' }, renderRows(globalAgents, 'global', true))
-              : h('div', { key: 'global-empty', style: styles.empty }, 'Глобальных агентов нет.'),
+              : ready
+                ? h('div', { key: 'global-empty', style: styles.empty }, t('panel.globalEmpty'))
+                : null,
           )
         } else {
           body.push(
             h(
               'div',
               { key: 'toolbar', style: styles.toolbar },
-              h('button', { type: 'button', style: styles.primary, onClick: openAdd }, 'Добавить агента'),
+              h('button', { type: 'button', className: 'a2a-focus', style: styles.primary, onClick: openAdd }, t('action.addAgent')),
             ),
           )
           body.push(
             localAgents.length > 0
               ? h('div', { key: 'list' }, renderRows(localAgents, 'global', false))
-              : h('div', { key: 'empty', style: styles.empty }, 'Агентов пока нет. Добавьте первого кнопкой выше.'),
+              : ready
+                ? h('div', { key: 'empty', style: styles.empty }, t('panel.empty'))
+                : null,
           )
         }
 
         if (data) {
-          var source = data.store && data.store.source === 'file' ? 'a2a-client.json' : 'конфиг плагина'
+          var source = data.store && data.store.source === 'file' ? t('panel.sourceFile') : t('panel.sourceConfig')
           body.push(
             h(
               'div',
               { key: 'store', style: Object.assign({}, styles.meta, { marginTop: '18px', wordBreak: 'break-all' }) },
-              'Реестр: ' + ((data.store && data.store.file) || '—') + ' · источник: ' + source
-                + (data.at ? ' · снимок ' + new Date(data.at).toLocaleTimeString() : ''),
+              t('panel.storeLine', { file: (data.store && data.store.file) || '—', source: source })
+                + (data.at ? t('panel.snapshot', { time: new Date(data.at).toLocaleTimeString() }) : ''),
             ),
           )
         }
@@ -1105,11 +1529,15 @@ window.__ModuleLoader__.load({
           modalNode = h(
             Modal,
             {
-              label: 'Добавить агента',
-              title: 'Новый агент',
-              subtitle: isWorkspace ? 'Рабочая область' : 'Профиль',
+              title: t('form.addTitle'),
+              subtitle: isWorkspace ? t('form.workspaceSubtitle') : t('form.profileSubtitle'),
               onClose: closeModal,
+              onEscape: function (event) {
+                event.stopPropagation()
+                closeModal()
+              },
               footer: null,
+              t: t,
             },
             h(AgentForm, {
               mode: 'add',
@@ -1118,17 +1546,22 @@ window.__ModuleLoader__.load({
               onSubmit: submitForm,
               onCancel: closeModal,
               onError: setError,
+              t: t,
             }),
           )
         } else if (modal && modal.mode === 'edit' && current) {
           modalNode = h(
             Modal,
             {
-              label: 'Редактировать агента',
-              title: 'Изменить «' + current.name + '»',
+              title: t('form.editTitle', { name: current.name }),
               subtitle: current.cardUrl,
               onClose: closeModal,
+              onEscape: function (event) {
+                event.stopPropagation()
+                closeModal()
+              },
               footer: null,
+              t: t,
             },
             h(AgentForm, {
               mode: 'edit',
@@ -1138,33 +1571,73 @@ window.__ModuleLoader__.load({
               onSubmit: submitForm,
               onCancel: closeModal,
               onError: setError,
+              t: t,
             }),
+          )
+        } else if (modal && modal.mode === 'confirm' && current) {
+          modalNode = h(
+            Modal,
+            {
+              title: t('panel.removeTitle'),
+              subtitle: current.cardUrl,
+              onClose: closeModal,
+              onEscape: function (event) {
+                event.stopPropagation()
+                closeModal()
+              },
+              footer: [
+                h(
+                  'button',
+                  { key: 'cancel', type: 'button', className: 'a2a-focus', style: styles.ghost, onClick: closeModal },
+                  t('action.cancel'),
+                ),
+                h(
+                  'button',
+                  {
+                    key: 'remove',
+                    type: 'button',
+                    className: 'a2a-focus',
+                    style: styles.danger,
+                    disabled: busy === current.name,
+                    onClick: function () {
+                      removeAgent(current.name)
+                    },
+                  },
+                  t('action.remove'),
+                ),
+              ],
+              t: t,
+            },
+            h('p', { style: styles.hint }, t('panel.removeConfirm', { name: current.name })),
+            h('p', { style: styles.hint }, t('panel.removeHint')),
+            errorNode(error, t, Object.assign({}, styles.banner, { marginBottom: 0 })),
           )
         } else if (modal && modal.mode === 'view' && current) {
           var footer
           if (readOnly) {
-            footer = [h('button', { key: 'close', type: 'button', style: styles.primary, onClick: closeModal }, 'Закрыть')]
+            footer = [h('button', { key: 'close', type: 'button', className: 'a2a-focus', style: styles.primary, onClick: closeModal }, t('action.close'))]
           } else if (confirmRemove) {
             footer = h(
               'span',
               { style: styles.rowTitle },
-              h('span', { style: styles.meta }, 'Удалить «' + current.name + '»?'),
+              h('span', { style: styles.meta }, t('panel.removeConfirm', { name: current.name })),
               h(
                 'button',
                 {
                   type: 'button',
+                  className: 'a2a-focus',
                   style: styles.danger,
                   disabled: busy === current.name,
                   onClick: function () {
                     removeAgent(current.name)
                   },
                 },
-                'Удалить',
+                t('action.remove'),
               ),
               h(
                 'button',
-                { type: 'button', style: styles.ghost, onClick: function () { setConfirmRemove(false) } },
-                'Отмена',
+                { type: 'button', className: 'a2a-focus', style: styles.ghost, onClick: function () { setConfirmRemove(false) } },
+                t('action.cancel'),
               ),
             )
           } else {
@@ -1174,65 +1647,70 @@ window.__ModuleLoader__.load({
                 {
                   key: 'toggle',
                   type: 'button',
+                  className: 'a2a-focus',
                   style: styles.ghost,
                   disabled: busy === current.name,
                   onClick: function () {
                     toggleAgent(current)
                   },
                 },
-                current.enabled === false ? 'Включить' : 'Отключить',
+                current.enabled === false ? t('action.enable') : t('action.disable'),
               ),
               h(
                 'button',
-                { key: 'edit', type: 'button', style: styles.ghost, onClick: function () { openEdit(current) } },
-                'Редактировать',
+                { key: 'edit', type: 'button', className: 'a2a-focus', style: styles.ghost, onClick: function () { openEdit(current) } },
+                t('action.edit'),
               ),
               h(
                 'button',
-                { key: 'remove', type: 'button', style: styles.danger, onClick: function () { setConfirmRemove(true) } },
-                'Удалить',
+                { key: 'remove', type: 'button', className: 'a2a-focus', style: styles.danger, onClick: function () { setConfirmRemove(true) } },
+                t('action.remove'),
               ),
-              h('button', { key: 'close', type: 'button', style: styles.primary, onClick: closeModal }, 'Закрыть'),
+              h('button', { key: 'close', type: 'button', className: 'a2a-focus', style: styles.primary, onClick: closeModal }, t('action.close')),
             ]
           }
 
           modalNode = h(
             Modal,
             {
-              label: 'Агент ' + current.name,
               title: current.name,
               subtitle: current.cardUrl,
               onClose: closeModal,
+              // Escape снимает подтверждение удаления и только второе нажатие
+              // закрывает окно; × и клик по фону закрывают его сразу.
+              onEscape: escapeModal,
               footer: footer,
+              t: t,
             },
-            h(DetailsBody, { agent: current, defaultAgent: data && data.defaultAgent, scope: scope, sessionId: sessionId }),
+            h(DetailsBody, { agent: current, defaultAgent: data && data.defaultAgent, scope: scope, sessionId: sessionId, t: t }),
+            errorNode(error, t, Object.assign({}, styles.banner, { marginTop: '14px', marginBottom: 0 })),
           )
         }
 
         return h(
           'section',
           { style: Object.assign({}, styles.page, isWorkspace ? { paddingTop: '20px' } : null) },
+          h('style', { key: 'css' }, CSS),
           h(
             'div',
             { style: styles.header },
-            h('h2', { style: styles.title }, isWorkspace ? 'A2A рабочей области' : 'A2A-подключения'),
+            h('h2', { style: styles.title }, isWorkspace ? t('panel.workspaceTitle') : t('panel.globalTitle')),
             h(
               'button',
               {
                 type: 'button',
+                className: 'a2a-focus',
                 style: styles.ghost,
                 onClick: load,
                 disabled: snapshot.phase === 'loading' || snapshot.phase === 'refreshing',
               },
-              snapshot.phase === 'refreshing' ? 'Обновляю…' : 'Обновить',
+              snapshot.phase === 'refreshing' ? t('action.refreshing') : t('action.refresh'),
             ),
           ),
           h(
             'p',
             { style: styles.lead },
-            isWorkspace
-              ? 'Агенты этой рабочей области (правятся здесь) и глобальные подключения профиля — только для просмотра.'
-              : 'Клиент Agent2Agent 1.0: агенты карточками, правка и проверка связи — в модальных окнах.',
+            isWorkspace ? t('panel.workspaceLead') : t('panel.globalLead'),
           ),
           body,
           modalNode,
@@ -1270,17 +1748,31 @@ window.__ModuleLoader__.load({
 
       /** Вкладка беседы: та же панель, но привязанная к рабочей области сессии. */
       function A2AWorkspaceView(props) {
-        return h(A2APanel, { scope: 'workspace', sessionId: props && props.sessionId })
+        return h(A2APanel, { scope: 'workspace', sessionId: props && props.sessionId, t: props && props.t })
       }
 
       module.exports = {
         name: 'a2a-client',
-        inject: ['slots'],
+        // `locale` — заявленная зависимость: без сервиса локализации плагин не
+        // активируется. Он входит в веб-сборку DSH, поэтому панель не теряется.
+        inject: ['slots', 'locale'],
         apply: function (ctx) {
+          // Словари всех трёх языков — одной регистрацией: ключи в них
+          // совпадают, потому что собраны из общей таблицы STRINGS.
+          ctx.effect(function () {
+            return ctx.locale.register(NS, {
+              en: dictionary('en'),
+              ru: dictionary('ru'),
+              zh: dictionary('zh'),
+            })
+          }, 'a2a-client: dictionaries')
+
+          // `locale: NS` — слот сам передаёт компоненту `t` и перерисовывает
+          // его при смене языка, отдельная подписка не нужна.
           ctx.effect(function () {
             return ctx.slots.inject('sidebar.panellist', function* () {
               yield ctx.slots.register(
-                { name: 'sidebar.panellist', id: 'a2a-client', order: 30, label: 'A2A' },
+                { name: 'sidebar.panellist', id: 'a2a-client', order: 30, label: 'A2A', locale: NS },
                 A2AIcon,
               )
             })
@@ -1288,8 +1780,8 @@ window.__ModuleLoader__.load({
 
           ctx.effect(function () {
             return ctx.slots.inject('main', function* () {
-              yield ctx.slots.register({ name: 'main', key: 'a2a-client' }, function () {
-                return h(A2APanel, { scope: 'global' })
+              yield ctx.slots.register({ name: 'main', key: 'a2a-client', locale: NS }, function (props) {
+                return h(A2APanel, { scope: 'global', t: props && props.t })
               })
             })
           }, 'a2a-client: main panel')
@@ -1297,7 +1789,7 @@ window.__ModuleLoader__.load({
           ctx.effect(function () {
             return ctx.slots.inject('conversation.view', function* () {
               yield ctx.slots.register(
-                { name: 'conversation.view', id: 'a2a', order: 40, label: 'A2A' },
+                { name: 'conversation.view', id: 'a2a', order: 40, label: 'A2A', locale: NS },
                 A2AWorkspaceView,
               )
             })
@@ -1308,4 +1800,3 @@ window.__ModuleLoader__.load({
     return module.exports
   },
 })
-

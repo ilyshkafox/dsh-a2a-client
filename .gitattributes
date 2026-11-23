@@ -4,6 +4,7 @@
 
 # Явно текстовые
 *.js    text
+*.cjs   text
 *.json  text
 *.yml   text
 *.md    text
