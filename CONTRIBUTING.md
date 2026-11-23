@@ -27,30 +27,40 @@ release it was built for.
 ## Releasing
 
 `.github/workflows/ci.yml` runs `check` and `test` on `main` and on pull
-requests. `.github/workflows/release.yml` runs on a `v*` tag and does the whole
-release: it refuses a tag that does not match `package.json`, refuses a version
-that npm already has, runs both suites, publishes to npm with provenance, and
-creates the GitHub Release with generated notes.
+requests.
+
+A **GitHub Release** publishes to npm — not a tag push. The release is the one
+act that ships, so what reaches npm is always what was released. Publishing a
+release for tag `v1.7.2` runs `.github/workflows/release.yml`, which checks the
+tag against `package.json`, runs both suites, skips a version npm already has,
+publishes, and prints what npm now serves.
 
 ```sh
 npm version patch --no-git-tag-version   # bump package.json
 git commit -am "Версия 1.7.2"
+git push origin main
 git tag v1.7.2
-git push origin main --tags
+git push origin v1.7.2
+gh release create v1.7.2 --generate-notes   # this publishes
 ```
+
+A prerelease version (`1.8.0-rc.1`) goes out under the `next` dist-tag, so it
+never takes over `latest`, which is what `dsh plugin add` installs.
 
 `prepublishOnly` runs `check` and `test` again, so a manual `npm publish` is
 equally safe.
 
 ### npm authentication
 
-Trusted publishing is configured per package on npmjs.com, so it cannot be set up
-before the package exists. For the **first** release add an `NPM_TOKEN`
-repository secret — a granular token with publish rights for `dsh-a2a-client`.
+The workflow uses npm trusted publishing (OIDC) — there is no `NPM_TOKEN`
+secret. The trust is configured once, and it needs the package to exist:
 
-Once the package is on npm, switch to a trusted publisher (repository
-`ilyshkafox/dsh-a2a-client`, workflow `release.yml`) and delete the secret. The
-workflow uses OIDC when `NPM_TOKEN` is absent.
+```sh
+npm trust github dsh-a2a-client --file release.yml --repo ilyshkafox/dsh-a2a-client
+```
 
-`--provenance` requires a public repository; this one is public, so the npm page
-shows the build provenance.
+`npm trust list dsh-a2a-client` shows what is configured. If the package is ever
+recreated, the trust goes with it and has to be granted again.
+
+`npm publish` attaches provenance automatically on a public repository, so the
+npm page shows the build provenance.
