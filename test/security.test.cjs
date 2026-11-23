@@ -616,6 +616,44 @@ async function main() {
     console.log('untrusted framing OK')
   }
 
+  /* ------------------- 13. enabled: false из конфига действительно выключает */
+
+  {
+    // Поле из config раньше терялось при нормализации: агент оставался
+    // включённым, хотя в файле стоит enabled: false.
+    const config = plugin.normalizeConfig({
+      agents: [
+        { name: 'off', cardUrl: 'https://off.example/card.json', enabled: false },
+        { name: 'on', cardUrl: 'https://on.example/card.json' },
+      ],
+    })
+    assert.equal(config.agents[0].enabled, false, 'enabled: false from config was dropped')
+    assert.equal(config.agents[1].enabled, true, 'agent without enabled is not enabled')
+    // Выключенный первый агент не становится агентом по умолчанию.
+    assert.equal(config.defaultAgent, 'on', 'disabled agent became the default')
+
+    const registry = { agents: config.agents, defaultName: config.defaultAgent }
+    assert.equal(plugin.selectAgent(registry).name, 'on', 'tool without agent picked a disabled one')
+    assert.throws(() => plugin.selectAgent(registry, 'off'), /отключён/i, 'explicit disabled agent was used')
+
+    // Явный defaultAgent, указывающий на выключенного, — предупреждение, а не
+    // молчаливый отказ работать.
+    const explicit = plugin.normalizeConfig({
+      defaultAgent: 'off',
+      agents: [
+        { name: 'off', cardUrl: 'https://off.example/card.json', enabled: false },
+        { name: 'on', cardUrl: 'https://on.example/card.json' },
+      ],
+    })
+    assert.ok(
+      explicit.warnings.some((warning) => /выключен/i.test(warning)),
+      'disabled defaultAgent is not reported: ' + explicit.warnings.join(' | '),
+    )
+    const explicitRegistry = { agents: explicit.agents, defaultName: explicit.defaultAgent }
+    assert.equal(plugin.selectAgent(explicitRegistry).name, 'on', 'tool without agent kept a disabled default')
+    console.log('config enabled OK')
+  }
+
   console.log('ALL CHECKS PASSED')
 }
 

@@ -19,8 +19,9 @@ for 30 seconds. No npm dependencies — only built-in `fetch` and `node:crypto`.
 
 ## Install
 
-Needs a DeepSeek Harness build with the `tools` service; the panel needs the Web
-UI (Desktop or `dsh web`).
+Needs DeepSeek Harness 0.2.2 or newer with the `tools` service — declared as
+`engines.dsh`, so an older build refuses the install. The panel needs the Web UI
+(Desktop or `dsh web`).
 
 ### Plugins panel
 
@@ -80,11 +81,12 @@ instead, put them in the profile's `cordis.patch.yml`:
 | `cardUrl` | — | Absolute `http://` or `https://` Agent Card address |
 | `tokenEnv` | `A2A_TOKEN_<NAME>` | Secret reference: an environment variable or a DSH credential store entry |
 | `timeoutMs` | `180000` | Timeout of one HTTP call |
+| `enabled` | `true` | A disabled agent stays in the list but the tools skip it |
 | `allowCrossOriginToken` | `false` | Let the token go to a JSON-RPC endpoint on another origin than the card |
-| `defaultAgent` | first agent | Agent used when a tool call names none |
+| `defaultAgent` | first enabled agent | Agent used when a tool call names none |
 
 The registry file wins: once the panel has written `a2a-client.json`, the config
-is no longer read. `enabled` is a panel switch, not a config field.
+is no longer read.
 
 A token typed in the panel goes to the DSH credential store
 (`~/.dsh/.credentials.yaml`), not to the registry; a build without that service

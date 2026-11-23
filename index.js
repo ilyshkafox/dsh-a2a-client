@@ -136,6 +136,10 @@ export function normalizeConfig(raw) {
       token: typeof entry.token === 'string' ? entry.token.trim() : '',
       timeoutMs: positiveNumber(entry.timeoutMs, timeoutMs),
       configToken: typeof source.token === 'string' ? source.token.trim() : '',
+      // `enabled: false` в конфиге значит то же, что выключенный агент в панели:
+      // запись остаётся в списке, но инструменты её не берут и карточка не
+      // опрашивается. Раньше поле здесь терялось и работало только в панели.
+      enabled: entry.enabled !== false,
       allowCrossOriginToken: entry.allowCrossOriginToken === true || source.allowCrossOriginToken === true,
     });
   });
@@ -146,12 +150,16 @@ export function normalizeConfig(raw) {
     names.add(agent.name);
   }
 
+  // Агент по умолчанию: явный из конфига, иначе первый включённый. Выключенный
+  // не годится — инструмент без `agent` упал бы на нём вместо работы.
   const defaultAgent = typeof source.defaultAgent === 'string' && source.defaultAgent.trim()
     ? source.defaultAgent.trim()
-    : agents[0]?.name;
+    : (agents.find((agent) => agent.enabled !== false) ?? agents[0])?.name;
 
   if (defaultAgent && !names.has(defaultAgent)) {
     warnings.push(`defaultAgent «${defaultAgent}» не найден среди agents.`);
+  } else if (defaultAgent && agents.some((agent) => agent.name === defaultAgent && agent.enabled === false)) {
+    warnings.push(`defaultAgent «${defaultAgent}» выключен (enabled: false) — инструмент без agent возьмёт другого агента.`);
   }
 
   return { agents, defaultAgent, timeoutMs, tokenEnv, warnings };
@@ -1564,7 +1572,12 @@ function createPanelApiHandler(globalRegistry, options) {
  */
 export function selectAgent(registry, requested) {
   const enabled = registry.agents.filter((agent) => agent.enabled !== false);
-  const wanted = String(requested ?? '').trim() || registry.defaultName || enabled[0]?.name;
+  // Выключенный defaultAgent — не повод падать: без явного имени берём первого
+  // включённого. Явно названный выключенный агент по-прежнему даёт ошибку ниже.
+  const fallback = enabled.some((agent) => agent.name === registry.defaultName)
+    ? registry.defaultName
+    : enabled[0]?.name;
+  const wanted = String(requested ?? '').trim() || fallback;
   if (!wanted) {
     throw new Error('Не настроен ни один A2A-агент: добавьте его в панели A2A.');
   }

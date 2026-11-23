@@ -18,7 +18,8 @@ A2A 是智能体互相调用的方式：有了这个插件，你的模型可以�
 
 ## 安装
 
-需要提供 `tools` 服务的 DeepSeek Harness 构建；面板需要 Web 界面（桌面版或
+需要 DeepSeek Harness 0.2.2 或更新版本，并提供 `tools` 服务——这一点写在
+`engines.dsh` 中，因此更旧的版本会拒绝安装。面板需要 Web 界面（桌面版或
 `dsh web`）。
 
 ### 「插件」面板
@@ -76,11 +77,11 @@ profile 的 `cordis.patch.yml`：
 | `cardUrl` | — | Agent Card 的绝对 `http://` 或 `https://` 地址 |
 | `tokenEnv` | `A2A_TOKEN_<名称>` | 密钥引用：环境变量或 DSH 凭据存储中的条目 |
 | `timeoutMs` | `180000` | 一次 HTTP 调用的超时 |
+| `enabled` | `true` | 停用的智能体仍会列出，但工具不会使用它 |
 | `allowCrossOriginToken` | `false` | 允许把令牌发往与卡片不同 origin 的 JSON-RPC endpoint |
-| `defaultAgent` | 第一个智能体 | 工具调用未指定名称时使用的智能体 |
+| `defaultAgent` | 第一个启用的智能体 | 工具调用未指定名称时使用的智能体 |
 
 注册表文件优先：一旦面板写入了 `a2a-client.json`，配置就不再被读取。
-`enabled` 是面板开关，不是配置字段。
 
 在面板中输入的令牌保存到 DSH 凭据存储（`~/.dsh/.credentials.yaml`），而不是
 注册表；在没有该服务的构建中，它写入注册表文件。引用名由智能体名称推导：
