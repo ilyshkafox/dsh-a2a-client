@@ -1,6 +1,6 @@
 {
   "name": "dsh-a2a-client",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "type": "module",
   "description": "A2A (Agent2Agent) 1.0 client for DeepSeek Harness: connects remote agents by their Agent Card, gives the model message and task tools, and adds an A2A panel localized to the DSH language.",
   "license": "MIT",
