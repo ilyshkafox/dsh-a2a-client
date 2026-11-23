@@ -141,10 +141,12 @@ git push origin main --tags
 создаст GitHub Release со сгенерированными заметками.
 `.github/workflows/ci.yml` прогоняет те же проверки на `main` и в pull request.
 
-Разовая настройка: включите **trusted publisher** для `dsh-a2a-client` на
-npmjs.com (репозиторий `ilyshkafox/dsh-a2a-client`, workflow `release.yml`) или
-заведите секрет репозитория `NPM_TOKEN`. Provenance требует публичный
-репозиторий.
+Разовая настройка: trusted publishing в npm включается для уже существующего
+пакета, поэтому **первый** релиз требует секрета репозитория `NPM_TOKEN`
+(granular-токен с правом публикации). Когда `dsh-a2a-client` появится в npm,
+включите для него **trusted publisher** (репозиторий
+`ilyshkafox/dsh-a2a-client`, workflow `release.yml`) и удалите секрет —
+дальше публикация идёт по OIDC. Provenance требует публичный репозиторий.
 
 ## Лицензия
 

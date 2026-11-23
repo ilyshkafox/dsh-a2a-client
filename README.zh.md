@@ -129,9 +129,11 @@ git push origin main --tags
 测试，带 provenance 发布到 npm，并生成带自动说明的 GitHub Release。
 `.github/workflows/ci.yml` 在 `main` 和 pull request 上运行同样的检查。
 
-一次性配置：在 npmjs.com 为 `dsh-a2a-client` 启用 **trusted publisher**
-（仓库 `ilyshkafox/dsh-a2a-client`，workflow `release.yml`），或改用仓库密钥
-`NPM_TOKEN`。provenance 需要公开仓库。
+一次性配置：npm 的 trusted publishing 只能为已存在的包设置，因此**首次**发布
+需要仓库密钥 `NPM_TOKEN`（具备发布权限的 granular 令牌）。`dsh-a2a-client`
+出现在 npm 之后，为它启用 **trusted publisher**（仓库
+`ilyshkafox/dsh-a2a-client`，workflow `release.yml`）并删除该密钥——之后的发布
+走 OIDC。provenance 需要公开仓库。
 
 ## 许可证
 

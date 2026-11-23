@@ -137,9 +137,12 @@ git push origin main --tags
 the GitHub Release with generated notes. `.github/workflows/ci.yml` runs the same
 checks on `main` and on pull requests.
 
-One-time setup: enable a **trusted publisher** for `dsh-a2a-client` on npmjs.com
-(repository `ilyshkafox/dsh-a2a-client`, workflow `release.yml`), or add an
-`NPM_TOKEN` repository secret instead. Provenance needs a public repository.
+One-time setup: npm trusted publishing is configured per package, so the **first**
+release needs an `NPM_TOKEN` repository secret (a granular token with publish
+rights). Once `dsh-a2a-client` exists on npm, enable a **trusted publisher** for
+it (repository `ilyshkafox/dsh-a2a-client`, workflow `release.yml`) and delete
+the secret — later releases then publish over OIDC. Provenance needs a public
+repository.
 
 ## License
 
