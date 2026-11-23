@@ -32,7 +32,9 @@
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "README.ru.md",
+    "README.zh.md"
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js",

@@ -4,504 +4,168 @@
 [![A2A 1.0](https://img.shields.io/badge/protocol-A2A%201.0-4C6EF5.svg)](https://a2a-protocol.org)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
-Клиент протокола **Agent2Agent (A2A) 1.0** для DeepSeek Harness: подключает
-удалённых агентов к вашей модели и добавляет панель управления ими.
+**English** | [Русский](https://github.com/ilyshkafox/dsh-a2a-client/blob/main/README.ru.md) | [中文](https://github.com/ilyshkafox/dsh-a2a-client/blob/main/README.zh.md)
 
-Модель получает три инструмента — посмотреть карточки агентов, отправить
-сообщение, поработать с задачами. Вы получаете панель **«A2A»** в сайдбаре,
-где агенты добавляются, проверяются и удаляются без правки файлов.
+An [Agent2Agent (A2A) 1.0](https://a2a-protocol.org) client for DeepSeek Harness.
+It connects remote agents to your model and adds an **A2A** panel where they are
+added, checked and removed without editing files.
 
-## Установка
+The model gets three tools — list agent cards, send a message, work with tasks.
+You get a sidebar panel; no dependencies, only built-in `fetch` and `node:crypto`.
 
-Нужен DeepSeek Harness с профилем. Пакет ставится тремя способами: штатным
-установщиком DSH (из npm или из git), вручную из git и вручную из npm.
-Штатный установщик делает всё сам — зависимость профиля, включение бандла,
-проверка версии; ручные шаги ниже нужны, только если установщик недоступен.
+Transport is JSON-RPC 2.0 over HTTP with the `a2a-version: 1.0` header and an
+optional `authorization: Bearer` — methods `SendMessage`, `SendStreamingMessage`
+(SSE), `GetTask`, `CancelTask`, `ListTasks`. Agent cards are cached for 30 seconds.
 
-### Штатно: установщик DSH
+## Install
 
-Проще всего поставить плагин из самого DSH: «Плагины» в сайдбаре → установить,
-или попросить агента с доступом к `plugin_manager`. Укажите одну из целей:
+The package is `dsh-a2a-client`. Installing it also enables the bundle:
+`dsh plugin add` adds the profile dependency and the `dsh.profile.bundles` entry.
 
-| Откуда | Что указать |
-| --- | --- |
-| npm | `dsh-a2a-client` |
-| git, ветка по умолчанию | `github:ilyshkafox/dsh-a2a-client` |
-| git, точный коммит | `github:ilyshkafox/dsh-a2a-client#<40-символьный sha>` |
+### Web profile
 
-Установщик делает всё сам: добавляет зависимость профиля, включает бандл,
-проверяет доступность репозитория и совместимость версии DSH, показывает
-прогресс и сообщает, нужен ли перезапуск.
+```sh
+dsh plugin --profile web add dsh-a2a-client                      # from npm
+dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client    # from git
+```
 
-Цель-коммит фиксирует версию: `main` меняется, а такой бандл обновляется только
-кнопкой «Обновить» на новый коммит того же репозитория. Ветка или тег удобнее
-для «всегда свежей» версии, но такую установку обновляют переустановкой: DSH не
-может откатить её на прежний коммит, если новая версия не запустится.
+Restart DSH: the **A2A** panel appears in the sidebar and the tools in chat.
 
-### Вручную: из git
+### Desktop
 
-**1. Добавьте пакет в зависимости профиля**
+Desktop owns its profile: start the app once so the profile exists, quit it, then
+run the `dsh` command that ships with the app — the profile lock and the loaded
+bundle both belong to the running application.
 
-Откройте `package.json` профиля (например
-`~/.dsh/profiles/web/package.json`) и добавьте зависимость:
+```sh
+dsh plugin --profile desktop add dsh-a2a-client
+```
+
+Start the app again. A `dsh` installed separately from npm refuses the `desktop`
+profile: only the app's own command may manage it.
+
+### Plugins panel
+
+**Plugins** → install, target `dsh-a2a-client` (npm) or
+`github:ilyshkafox/dsh-a2a-client` (git). The panel checks the repository and the
+DSH version, streams progress and reports whether a restart is needed.
+
+### By hand
+
+Add both entries to the profile `package.json` (`~/.dsh/profiles/web/package.json`)
+and run `pnpm install`:
 
 ```json
 {
-  "dependencies": {
-    "dsh-a2a-client": "github:ilyshkafox/dsh-a2a-client"
-  }
+  "dependencies": { "dsh-a2a-client": "github:ilyshkafox/dsh-a2a-client" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-a2a-client"] } }
 }
 ```
 
-Формы git-спецификации, которые понимает pnpm:
+A local checkout uses `"dsh-a2a-client": "link:/absolute/path/to/dsh-a2a-client"`.
 
-| Запись | Что ставится |
-| --- | --- |
-| `github:ilyshkafox/dsh-a2a-client` | ветка по умолчанию, HTTPS |
-| `github:ilyshkafox/dsh-a2a-client#v1.7.0` | тег или ветка |
-| `git+ssh://git@github.com/ilyshkafox/dsh-a2a-client.git` | через SSH, нужен ключ |
-| `git+https://github.com/ilyshkafox/dsh-a2a-client.git` | через HTTPS |
+### First agent
 
-**2. Включите бандл в профиле**
+Open **A2A** → **Add agent**, and fill in a name, an Agent Card URL and a token if
+the agent needs one. The card is fetched right away, so a wrong address or token
+is not saved.
 
-В том же файле, в списке `dsh.profile.bundles`:
+A git spec pinned to a full 40-character commit can be updated with the panel's
+**Update** button; a branch or tag has to be reinstalled.
 
-```json
-{
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-web-app",
-        "dsh-a2a-client"
-      ]
-    }
-  }
-}
-```
+## Configure
 
-**3. Установите зависимости профиля и перезапустите DSH**
-
-```sh
-pnpm install
-```
-
-Вместо правки файла зависимость можно поставить командой — она форвардит
-аргументы в pnpm внутри каталога профиля, но бандл **не** включает: список
-`dsh.profile.bundles` из шага 2 всё равно нужен.
-
-```sh
-dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client
-```
-
-### Вручную: из npm
-
-То же самое, но версия берётся из реестра:
-
-```json
-{
-  "dependencies": {
-    "dsh-a2a-client": "^1.7.0"
-  }
-}
-```
-
-```sh
-pnpm install
-# или: dsh plugin --profile web add dsh-a2a-client
-```
-
-Пакет не тянет зависимостей: в нём только `index.js`, `client.js`,
-`cordis.patch.yml`, `locale/*.json` и `icon.svg`. Если реестр по умолчанию
-недоступен, укажите зеркало: `pnpm add dsh-a2a-client --registry https://registry.npmmirror.com/`.
-
-### Из локального каталога (разработка)
-
-Если плагин правится на месте, вместо git-спеки укажите ссылку на каталог —
-изменения в `client.js` подхватываются перезагрузкой страницы, в `index.js` —
-перезапуском DSH:
-
-```json
-{
-  "dependencies": {
-    "dsh-a2a-client": "link:/home/me/dsh-a2a-client"
-  }
-}
-```
-
-Путь в `link:` абсолютный: `link:G:/local/dsh-a2a-client` в Windows,
-`link:/home/me/dsh-a2a-client` в Linux и macOS.
-
-### После установки
-
-В сайдбаре появится панель «A2A», а в чате — три инструмента. Откройте панель →
-«Добавить агента», укажите имя, адрес AgentCard и токен, если он нужен. Плагин
-сразу проверит карточку: если адрес или токен неверны, запись не сохранится.
-
-### Обновление и удаление
-
-Кнопка «Обновить» в «Плагинах» работает для npm-установки и для git-установки,
-зафиксированной на полный 40-символьный коммит: в обоих случаях плагин знает,
-откуда взялась текущая версия.
-
-| Установка | Как обновить |
-| --- | --- |
-| npm | «Плагины» → «Обновить», или `dsh plugin --profile web add dsh-a2a-client@latest` |
-| git, коммит `#<sha>` | «Плагины» → «Обновить» на новый коммит того же репозитория |
-| git, ветка или тег | переустановить: `dsh plugin --profile web add github:ilyshkafox/dsh-a2a-client` |
-
-Удаление:
-
-```sh
-dsh plugin --profile web remove dsh-a2a-client
-```
-
-После удаления пакета уберите `dsh-a2a-client` из `dsh.profile.bundles`, если
-список правился вручную. Профиль `desktop` управляется приложением: его
-плагины ставятся и удаляются только через интерфейс.
-
-### Альтернатива: вставка через патч-слой
-
-Если профиль не использует список бандлов, вставьте плагин в патч-слой
-`cordis.patch.yml` профиля:
-
-```yaml
-- insert:
-    - id: a2a-client
-      name: 'dsh-a2a-client'
-      config:
-        timeoutMs: 120000
-```
-
-Агентов можно описать и прямо в `config` — см. раздел
-[Настройка](#настройка).
-
-## Возможности
-
-- **Карточка агента** — `GET <cardUrl>` с кэшем на 30 секунд и ручным обновлением.
-- **Обмен сообщениями** — `SendMessage` и `SendStreamingMessage` (SSE).
-- **Задачи** — `GetTask`, `CancelTask`, `ListTasks`.
-- **Несколько подключений** — у каждого агента своя карточка, свой токен и свой таймаут.
-- **Токены через переменные окружения** — секреты не попадают в файлы.
-- **Язык как в DSH** — русский, английский и китайский; переключается вместе с интерфейсом.
-- **Ноль зависимостей** — только встроенные `fetch` и `node:crypto`.
-
-## Настройка
-
-Агенты живут в реестре профиля: файл `a2a-client.json` в каталоге профиля.
-Его наполняет панель, а если файла ещё нет — агенты берутся из `config`
-плагина.
+Agents live in the profile registry `a2a-client.json`, filled in by the panel.
+Until that file exists, agents come from the plugin `config`:
 
 ```yaml
 config:
-  defaultAgent: my-agent      # агент по умолчанию для a2a_send и a2a_task
-  tokenEnv: A2A_AUTH_TOKEN    # общая переменная окружения (необязательно)
-  timeoutMs: 180000           # таймаут одного HTTP-вызова
+  defaultAgent: my-agent        # agent used by a2a_send and a2a_task by default
+  tokenEnv: A2A_AUTH_TOKEN      # shared secret reference (optional)
+  timeoutMs: 180000             # one HTTP call
   agents:
-    - name: my-agent          # имя, по которому агента адресуют инструменты
+    - name: my-agent
       cardUrl: https://agent.example.com/.well-known/agent-card.json
-      tokenEnv: A2A_TOKEN_MY_AGENT   # необязательно, выводится из имени
-      timeoutMs: 120000       # переопределяет общий таймаут
+      tokenEnv: A2A_TOKEN_MY_AGENT
+      timeoutMs: 120000
 ```
 
-| Поле | По умолчанию | Назначение |
+| Field | Default | Meaning |
 | --- | --- | --- |
-| `name` | — | Имя агента; им адресуют инструменты. До 64 символов: буквы, цифры, пробел, `_`, `.`, `-`. |
-| `cardUrl` | — | Абсолютный `http://` или `https://` адрес AgentCard. |
-| `tokenEnv` | `A2A_TOKEN_<ИМЯ>` | Имя ссылки на секрет: переменная окружения или запись в хранилище DSH. |
-| `token` | пусто | Токен прямо в конфиге. Уступает хранилищу и переменной окружения. |
-| `timeoutMs` | `180000` | Таймаут одного HTTP-вызова к этому агенту. |
-| `enabled` | `true` | Выключенный агент виден в панели, но не опрашивается. |
-| `allowCrossOriginToken` | `false` | Разрешить отправку токена на JSON-RPC endpoint другого origin, чем у карточки. |
+| `name` | — | Agent name used by the tools: up to 64 characters, letters, digits, space, `_`, `.`, `-` |
+| `cardUrl` | — | Absolute `http://` or `https://` Agent Card address |
+| `tokenEnv` | `A2A_TOKEN_<NAME>` | Secret reference: an environment variable or a DSH credential store entry |
+| `token` | empty | Token in the config itself; loses to the store and the environment |
+| `timeoutMs` | `180000` | Timeout of one HTTP call to this agent |
+| `enabled` | `true` | A disabled agent is listed but not polled |
+| `allowCrossOriginToken` | `false` | Allow sending the token to a JSON-RPC endpoint on another origin than the card |
 
-### Токены и несколько подключений
+### Tokens
 
-Агентов может быть сколько угодно, и у каждого — свой токен. Имя ссылки на
-секрет выводится из имени агента: `A2A_TOKEN_<ИМЯ>` в верхнем регистре, где
-всё кроме латинских букв и цифр заменено на `_`.
+Each agent has its own secret. The reference name is derived from the agent name:
+`A2A_TOKEN_<NAME>` in upper case, with everything but Latin letters and digits
+replaced by `_` — `prod agent` becomes `A2A_TOKEN_PROD_AGENT`.
 
-| Имя агента | Переменная окружения |
-| --- | --- |
-| `test` | `A2A_TOKEN_TEST` |
-| `prod agent` | `A2A_TOKEN_PROD_AGENT` |
-| `agent.v2` | `A2A_TOKEN_AGENT_V2` |
-| `custom` (с `tokenEnv: MY_OWN_VAR`) | `MY_OWN_VAR` |
+A token entered in the panel goes to the **DSH credential store**
+(`ctx.credentials`, `~/.dsh/.credentials.yaml`), not to `a2a-client.json`.
+Lookup order:
 
-```sh
-export A2A_TOKEN_TEST=токен-тестового-агента
-export A2A_TOKEN_PROD_AGENT=токен-боевого-агента
-```
+1. The DSH credential store — what the panel saved.
+2. The process environment and `.env`.
+3. The `token` field in the config or in `a2a-client.json` — read-only, for
+   records written before the credential store.
 
-Токен, введённый в панели, сохраняется в **хранилище секретов DSH**
-(`ctx.credentials`, файл `~/.dsh/.credentials.yaml`) под той же ссылкой, а не
-в `a2a-client.json`. Порядок поиска:
+## Tools
 
-1. Хранилище секретов DSH — то, что сохранено в панели.
-2. Переменная окружения процесса и `.env` (сам сервис хранилища читает их как
-   запасной слой, пока в файле значения нет).
-3. Поле `token` в конфиге или в `a2a-client.json` — только чтение, для записей,
-   сделанных до перехода на хранилище.
-
-Явно сохранённое в панели значение важнее окружения: иначе введённый токен
-молча ничего бы не изменил. Поэтому токен можно вставить в панели для быстрой
-проверки, а в рабочем профиле задать его через переменную — секрет останется
-вне репозитория, а реестр агентов останется чистым.
-
-Если имя агента не даёт пригодного идентификатора (например, состоит только
-из кириллицы), выведенная переменная не создаётся — задайте `tokenEnv` вручную
-или положитесь на общую `A2A_AUTH_TOKEN`.
-
-## Инструменты
-
-### `a2a_agents`
-
-Показывает настроенных агентов: имя, карточку, умения и интерфейсы. Вызывайте
-в начале работы, чтобы понять, кто доступен.
-
-| Параметр | Тип | Описание |
+| Tool | Parameters | Purpose |
 | --- | --- | --- |
-| `agent` | `string` | Имя агента. Не указано — все настроенные. |
-| `refresh` | `boolean` | Перечитать карточку с сервера, не из кэша. |
+| `a2a_agents` | `agent?`, `refresh?` | List agents: name, card, skills, interfaces |
+| `a2a_send` | `text` (required), `agent?`, `contextId?`, `stream?`, `timeoutSec?` | Send a message, return the final answer |
+| `a2a_task` | `action` (required: `get`, `cancel`, `list`), `taskId?`, `agent?`, `contextId?` | Read, cancel or list tasks |
 
-### `a2a_send`
+`a2a_send` continues a dialogue through `contextId`: it is returned in the reply
+and remembered per session and agent, so the next call needs no manual context.
 
-Отправляет сообщение удалённому агенту и возвращает его финальный ответ.
-Диалог продолжается тем же `contextId` — он возвращается в ответе и
-запоминается автоматически.
+## Panel
 
-| Параметр | Тип | Описание |
-| --- | --- | --- |
-| `text` | `string` | **Обязателен.** Текст сообщения. |
-| `agent` | `string` | Имя агента; по умолчанию `defaultAgent`. |
-| `contextId` | `string` | Контекст прошлой задачи для продолжения диалога. |
-| `stream` | `boolean` | Использовать `SendStreamingMessage` (SSE) вместо `SendMessage`. |
-| `timeoutSec` | `number` | Таймаут ожидания ответа в секундах. |
+**A2A** in the sidebar lists agents as cards: name, connection state, card
+description and address. The agent dialog shows metadata, the card, its skills
+and a test message; add, edit and delete sit next to it.
 
-### `a2a_task`
+Agents come on two levels: profile-wide, and per workspace
+(`<workspace>/.dsh/a2a-client.json`). Panel changes are saved immediately and
+survive a restart. The panel language follows DSH — Russian, English or Chinese,
+switched in **Settings → General → Language** without a restart.
 
-| Параметр | Тип | Описание |
-| --- | --- | --- |
-| `action` | `get` \| `cancel` \| `list` | **Обязателен.** Что сделать с задачами. |
-| `taskId` | `string` | Идентификатор задачи для `get` и `cancel`. |
-| `agent` | `string` | Имя агента. |
-| `contextId` | `string` | Фильтр по контексту для `list`. |
+## Security
 
-## Панель
+- The panel route `/a2a-client/api` is guarded by DSH's own
+  `ctx.connection.requestRejection`: Host and Origin checks against DNS
+  rebinding plus browser session authentication.
+- A loopback name is accepted only as a literal `127/8` address, `localhost` or
+  `::1`; a name like `127.evil.com` is refused.
+- A token never travels to another origin than the card, and never over plain
+  `http://` to a remote host; a changed `cardUrl` needs its own token.
+- Card reads follow same-origin redirects only; JSON-RPC POST follows none.
+- Agent Card, JSON-RPC and SSE responses are capped at 1 / 4 / 8 MB.
+- Agent output is wrapped in `--- external A2A agent data ---` frames: it is
+  data, not instructions. Treat it as untrusted text.
 
-Панель «A2A» в сайдбаре показывает агентов карточками: имя, состояние
-подключения, описание из карточки агента и адрес. В окне агента — метаданные
-(протокол, версия, умения, токен, таймаут), сама карточка, список умений и
-тестовое сообщение. Рядом — добавление, правка и удаление.
+## Development
 
-Агенты бывают двух уровней: общие для профиля и локальные для рабочей области
-(файл `<workspace>/.dsh/a2a-client.json`). Изменения из панели сохраняются
-сразу и переживают перезапуск.
-
-## Язык интерфейса
-
-У панели нет собственной настройки языка: она берёт язык из самого DeepSeek
-Harness — «Настройки → Основные → Язык». Смена языка в DSH сразу перерисовывает
-панель, перезапуск не нужен.
-
-| Язык DSH | Подписи панели |
-| --- | --- |
-| Русский | русские |
-| 中文 | китайские |
-| English | английские |
-| Остальные (ja, es, fr, de, pt) | английские — запасной язык |
-
-Переводы лежат одной таблицей в `client.js` и регистрируются в сервисе
-локализации DSH (`ctx.locale`) под пространством имён `a2a-client`. Сервис
-локализации входит в веб-сборку DSH; плагин заявляет его зависимостью и без
-него не активируется.
-
-Что остаётся непереведённым:
-
-- **Диагностика host-половины** — ошибки сети, проверки адреса и предупреждения
-  конфига приходят по-русски. Панель помечает их как «Сообщение сервера», чтобы
-  их не приняли за собственные подписи.
-- **Текст удалённого агента** — карточка, умения и ответы приходят такими,
-  какими их прислал сервер.
-- **Пробное сообщение** — по умолчанию английское: это не подпись, а текст,
-  который уходит агенту, и он может понимать только английский. Подсказка поля
-  переводится.
-
-Название плагина в «Плагинах» тоже переводится — файлы `locale/en.json`,
-`locale/ru.json`, `locale/zh.json`.
-
-## Как это работает
-
-| Что | Как |
-| --- | --- |
-| Транспорт | JSON-RPC 2.0 поверх HTTP |
-| Заголовки | `a2a-version: 1.0`, `authorization: Bearer <токен>` при наличии токена |
-| Методы | `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `ListTasks` |
-| Стриминг | Server-Sent Events |
-| Кэш карточек | 30 секунд для инструментов; панель перечитывает карточку при каждом обновлении |
-| Хранение | `a2a-client.json` в каталоге профиля, атомарная запись через временный файл; токены — в хранилище секретов DSH |
-| Токены в браузер | не передаются: панель видит только «задан / не задан» |
-| Доступ к маршруту | штатная проверка DSH: Host/Origin плюс браузерная сессия |
-| Запросы к агенту | same-origin редиректы для карточки, без редиректов для JSON-RPC |
-
-## Безопасность
-
-Маршрут панели `/a2a-client/api` умеет менять реестр агентов и отправлять
-сообщения от имени пользователя, поэтому доступ к нему проверяется не самим
-плагином, а сервисом соединений DSH:
-
-```js
-// в обработчике маршрута панели
-const rejection = connection?.requestRejection(req) ?? null; // 401 | 403 | undefined
-if (rejection !== null) { /* отказ */ }
-```
-
-Это та же защита, что у собственного `/api` DSH: Host-проверка против
-DNS-rebinding, `Origin`/`sec-fetch-site` и аутентификация браузерной сессии.
-Без неё маршрут был бы открыт любому локальному процессу без cookie. Если
-сервиса соединений в сборке нет, работает запасная проверка (loopback-сокет,
-loopback-Host, совпадающий Origin), и запрос, который нельзя проверить,
-отклоняется: отказ важнее удобства.
-
-Что ещё учтено:
-
-- **Loopback-имя проверяется как литерал.** Принимаются только `localhost`,
-  `::1` и настоящий адрес из `127/8`. Имя вида `127.evil.com` — обычный домен,
-  который владелец может перебиндить на 127.0.0.1, поэтому оно отклоняется.
-- **Смена адреса агента не переносит токен.** Если в панели поменять `cardUrl`
-  на другой origin, правка требует явного решения: ввести токен заново или
-  отметить «Удалить сохранённый токен». Иначе сохранённый Bearer ушёл бы на
-  новый адрес — молча, через проверку связи. Вместе с токеном отвязывается и
-  переменная окружения `A2A_TOKEN_<ИМЯ>`: новый адрес получает только то, что
-  введено явно, а не секрет, привязанный к прежнему хосту.
-- **Секрет живёт в хранилище DSH, а не в реестре агентов.** Панель пишет токен
-  через `ctx.credentials.set(...)`, а читает через `resolve`: значение больше не
-  попадает в `a2a-client.json` — в том числе в файл рабочей области, который
-  может уехать в git. Без сервиса хранилища (минимальная сборка) остаётся
-  прежнее поведение, и токен ложится в запись.
-- **Токен не уходит на чужой origin.** Адрес JSON-RPC берётся из карточки, то
-  есть его задаёт удалённая сторона. Bearer прикладывается только к тому же
-  origin, что у карточки; иначе запрос идёт без него, а причина возвращается
-  в вывод и в панель. Включить перенос можно явно: `allowCrossOriginToken`.
-- **Токен не уходит по открытому `http://`** на удалённый хост (кроме
-  localhost/`127/8`): панель не сохранит такой токен, а запрос уйдёт без него.
-- **Редиректы ограничены.** Карточка читается с `redirect: 'manual'` и только
-  по same-origin (до 5 шагов), JSON-RPC POST редиректы не проходит вовсе:
-  адрес должен быть окончательным. Учётные данные внутри URL и не-HTTP схемы
-  отклоняются до запроса.
-- **Пределы ответов.** Карточка, ответ JSON-RPC и SSE-поток читаются с жёстким
-  лимитом байт (1 МБ / 4 МБ / 8 МБ): удалённый агент — недоверенная сторона и
-  не должен ронять хост потоком.
-- **Тело запроса панели** ограничено 1 МБ, ответы уходят с `cache-control:
-  no-store`.
-
-Что остаётся на стороне пользователя:
-
-- **Хранилище секретов — обычный файл** `~/.dsh/.credentials.yaml` с правами
-  профиля: он защищает от попадания токена в репозиторий, но не от другого
-  процесса с теми же правами. Для машин с несколькими пользователями надёжнее
-  переменная окружения.
-- **Токен уходит на endpoint из карточки.** Даже с привязкой к origin адрес
-  задаёт удалённая сторона. Используйте `https://` для всего, что не на
-  localhost.
-- **Ответы агента — недоверенный текст.** Карточки и ответы попадают в контекст
-  модели как вывод инструментов, поэтому инструкции внутри них не являются
-  командами пользователя. Вывод обёрнут явными границами
-  `--- внешние данные A2A-агента … ---`, а описания инструментов говорят то же
-  словами; полагаться на это как на фильтр нельзя.
-
-## Структура
-
-```
-index.js            host-половина: инструменты, JSON-RPC, SSE, маршрут /a2a-client/api
-client.js           браузерная половина: панель «A2A» (без сборки), словари ru/en/zh
-cordis.patch.yml    патч-слой бандла: вставка плагина в профиль
-locale/ru.json      русские название и описание для «Плагинов»
-locale/en.json      английские название и описание для «Плагинов»
-locale/zh.json      китайские название и описание для «Плагинов»
-test/locale.test.cjs  проверка словарей и отрисовки на трёх языках
-test/security.test.cjs проверка доступа, токенов и политики запросов
-icon.svg            иконка плагина
-```
-
-## Разработка
+No dependencies, no build. Edits to `client.js` apply on page reload, `index.js`
+on a DSH restart.
 
 ```sh
-git clone git@github.com:ilyshkafox/dsh-a2a-client.git
-cd dsh-a2a-client
+npm test        # locale + security suites
+npm run check   # syntax of both halves
+npm publish     # runs check and test first (prepublishOnly)
 ```
 
-Зависимостей нет, `npm install` не требуется. Правки `client.js`
-подхватываются перезагрузкой страницы, правки `index.js` — перезапуском DSH.
+`files` in `package.json` is the whole npm payload: `index.js`, `client.js`,
+`cordis.patch.yml`, `locale/*.json`, `icon.svg`, plus the README and license npm
+adds. Add a new runtime file to `files` and `exports` together.
 
-Проверка синтаксиса:
-
-```sh
-node --check index.js
-node --check client.js
-```
-
-Проверка локализации (без DSH и без зависимостей): тест поднимает мини-рендерер
-с хуками и поддельный сервис локализации, а затем проверяет, что ключи словарей
-ru/en/zh совпадают, что каждый запрошенный ключ определён и что панель, окна
-агента, добавления и подтверждения удаления рисуются на каждом языке без
-«сырых» ключей. Отдельно проверяются смена языка при открытом окне, отсутствие
-пустых состояний во время загрузки и пометка сообщений host-половины.
-
-```sh
-node test/locale.test.cjs
-```
-
-Проверка доступа к маршруту панели (без DSH и без сети):
-
-```sh
-node test/security.test.cjs
-```
-
-Обе проверки сразу:
-
-```sh
-npm test
-```
-
-### Публикация в npm
-
-Пакет публикуется под именем `dsh-a2a-client` (без scope) — именно его
-установщик DSH находит в реестре. `private` в `package.json` нет, поэтому
-публикация не заблокирована.
-
-```sh
-npm pack --dry-run   # что попадёт в архив: index.js, client.js,
-                     # cordis.patch.yml, locale/*.json, icon.svg, README, LICENSE
-npm publish          # перед публикацией прогоняются check и test
-```
-
-Порядок выпуска версии: поднимите `version`, закоммитьте, поставьте тег
-(`git tag v1.7.0 && git push --tags`), затем `npm publish`. Для git-установки
-тег не обязателен, но он делает `#v1.7.0` в спецификации осмысленным.
-
-`files` в `package.json` — единственный список того, что уезжает в npm; тесты и
-каталог `.audit/` в пакет не попадают. Git-установка пакует тем же списком,
-поэтому новый файл рантайма нужно добавлять и в `files`, и в `exports`.
-
-## Частые вопросы
-
-**Агент не подключается.** Проверьте, что `cardUrl` открывается в браузере и
-отдаёт JSON. Панель показывает текст ошибки от сервера.
-
-**Токен не подхватывается.** Убедитесь, что переменная задана в окружении
-самого DSH, а не только в вашем терминале: процесс должен получить её при
-старте. Имя переменной для агента `test` — `A2A_TOKEN_TEST`.
-
-**У двух агентов один токен.** Так и будет, если ни у одного нет своей
-переменной: оба упадут на общую `A2A_AUTH_TOKEN`. Задайте каждому своё имя
-через `tokenEnv` или переименуйте агентов — имя входит в переменную.
-
-**Панель на китайском, а ошибка на русском.** Так и задумано: подписи панели
-следуют языку DSH, а диагностика от host-половины (сеть, проверка адреса,
-предупреждения конфига) приходит на русском и помечается как «Сообщение
-сервера». Текст от самого удалённого агента не переводится вообще — он
-приходит таким, каким его прислал сервер.
-
-## Лицензия
+## License
 
 [MIT](LICENSE)
